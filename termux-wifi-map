@@ -1,0 +1,1014 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+ ##############################################
+ # Author: Kamil BuriXon Burek (BuriXon-code) #
+ # Name: Termux-WiFi-map (c) 2025             #
+ # Description: Scan and save APs locations   #
+ # License: GPLv3.0                           #
+ # Version: v 1.0                             #
+ # Changelog: release                         #
+ # Todo: fix listing option (too slow)        #
+ ##############################################
+
+ # Termux-WiFi-map
+ # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
+ #
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation, either version 3 of the License, or
+ # (at your option) any later version.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# Debugging
+#export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
+#set -x
+
+# shellcheck disable=2015,2001,2009,2034
+
+set -euo pipefail
+
+#META
+SCRIPT_NAME="Termux-WiFi-map"
+SCRIPT_COMMAND="$(basename "$0")"
+SCRIPT_AUTHOR="Kamil BuriXon Burek"
+SCRIPT_VERSION="1.0"
+SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
+SCRIPT_DONATE="https://burixon.dev/donate/"
+SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
+
+#PLACES
+CACHE_DIR="$HOME/.cache/BuriXon-code"
+CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
+
+#RUN-OPTIONS
+PROVIDER="gps"
+DELAY=10
+ZERO_DELAY=false
+DO_VIBRATE=true
+EXIT_ON_FAIL=false
+CONTINUOUS=false
+
+#SAVE-OPTIONS
+SAVE_OVERRIDE=false
+DO_SAVE=false
+SAVE_FILE=""
+SAVE_FMT=""
+SAVE_EXT=""
+
+#CACHE-OPTIONS
+CACHE_LIST=false
+CACHE_PURGE=false
+CACHE_COUNT=false
+
+#VALID-OPTIONS
+DO_VALID="false"
+VALID_FILE=""
+
+#COLORS
+GREEN="\e[38;5;120m"
+RED="\e[38;5;203m"
+YELLOW="\e[38;5;229m"
+RESET="\e[0m"
+echo -en "\e[?25l"
+
+#STATUS MESSAGES
+error() {
+	echo -e "\r\e[1;31m[ERR!]\e[0m $*\e[K" >&2
+}
+success() {
+	echo -e "\r\e[1;32m[DONE]\e[0m $*\e[K"
+}
+info() {
+	echo -e "\r\e[1;33m[INFO]\e[0m $*\e[K"
+}
+show_help() {
+	version_info
+	echo -e "
+\e[1;36m[Usage]\e[0m $SCRIPT_COMMAND [mode] [options]
+
+\e[1;36m[Modes]\e[0m
+  R|-R|--run		Start scanning and saving WiFi networks to cache.
+  S|-S|--save		Save collected data to the chosen format.
+  C|-C|--cache		Manage data in cache (list of known networks).
+  V|-V|--check		Check the correctness of the given file structure.
+  -v|--version		Display short info about the script version.
+  -i|--version-info	Displays detailed info about the script.
+  -h|--help		Displays information about options and script usage.\n
+\e[1;36m[Options]\e[0m
+  \e[36m[RUN]\e[0m
+  -p|--provider [option]	Set GPS provider [gps|network|passive] (default: gps)
+  -d|--delay [value]		Set delay between scans in seconds [int. 1-3600|none] (default: 10)
+  -c|--countinuous		Set working mode to continuous (default: false)
+  -q|--quiet			Disable vibration during scanning (default: false)
+  -e|--exit-on-fail		Exit on Termux:API error (default: false)\n
+  \e[36m[SAVE]\e[0m
+  -n|--name [filename]		Declare filename to save
+  -f|--format [option]		Declare chosen output format [json|pjson|jsonl|csv|kml]
+  -o|--override			Allow overwriting an existing file\n
+  \e[36m[CACHE]\e[0m
+  -l|--list			List all known APs
+  -c|--count			Display the number of all known APs
+  -p|--purge			Clear the list of all known APs\n
+  \e[36m[RUN]\e[0m
+  /path/to/file			Path to the file to check\n
+\e[1;36m[Examples]\e[0m
+  Scan once:
+  $SCRIPT_COMMAND -R\n
+  Continous scanning with 5s delay:
+  $SCRIPT_COMMAND --run -d 5 -c\n
+  Save DB to file.kml file:
+  $SCRIPT_COMMAND -S -n file -f kml\n
+  Override existing file.json file:
+  $SCRIPT_COMMAND S -n file -f json -o\n
+  List all cached APs:
+  $SCRIPT_COMMAND -C -l\n
+  Check file.json integrity:
+  $SCRIPT_COMMAND V file.json\n
+  Show informations about script:
+  $SCRIPT_COMMAND --version_info\n
+\e[1;36m[Formats]\e[0m
+  JSON		Classic single-line JSON
+  PJSON		Pretty formatted JSON
+  JSONL		Newline-delimited JSON
+  CSV		Comma-separated values
+  KML		Format for representing points on maps
+"
+}
+version_info() {
+	info "$SCRIPT_NAME v. $SCRIPT_VERSION (C) $SCRIPT_AUTHOR"
+}
+
+about_info() {
+	version_info
+	echo -e "
+\e[1;36m[About]\e[0m The script \e[1m$(basename "$0")\e[0m, which is the main executable component of the Termux-WiFi-map project, is a tool that allows you to build a database of WiFi networks in your surroundings directly in Termux.\n
+\e[1;36m[Options]\e[0m Among the available options, you can find:
+	+ scanning with various options
+	+ saving collected data to JSON, CSV, KML files
+	+ validating files created by the script\n
+\e[1;36m[Changelog]\e[0m:
+[1.0] - Initial Release
+	This is the very first official release of Termux-WiFi-map. 
+	It marks the initial version of the tool, providing basic WiFi scanning, data saving, and validation features.
+	Future updates will expand functionality and improve usability.\n
+\e[1;36m[License]\e[0m The script is released under the GPLv3 license. \n
+This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
+It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
+Visit \e[1;4;36mhttps://www.gnu.org/licenses/gpl-3.0.html\e[0m\e[K for more info.\n
+\e[1;36m[URL]\e[0m If you appreciate my work, consider making a donation at: \e[1;4;36m$SCRIPT_DONATE\e[0m\e[K\n
+\e[1;36m[URL]\e[0m More information about the script's functionality, version changes, usage, and tips can be found at: \e[1;4;36m$SCRIPT_PAGE\e[0m\e[K
+"
+
+info "Open page now? [Y/n] "
+read -rn1 answer
+case "$answer" in
+	n|N)
+		info "Selected: $answer"
+		success "Done."
+		exit 0
+		;;
+	*)
+		echo -en "\e[1A\e[K"
+		info "Selecting browser..."
+		open_page $SCRIPT_PAGE
+		success "Done."
+		exit 0
+		;;
+esac
+
+#open_page $SCRIPT_PAGE
+}
+
+#OPEN INFO PAGE
+by_termux() {
+	if command -v termux-open-url &>/dev/null; then
+		termux-open-url "$1"
+	else
+		error "Cannot open link."
+		exit 1
+	fi
+}
+open_page() {
+	local page="$1"
+	local vnc_proc vnc_pid browser
+
+	for b in firefox firefox-esr chromium brave google-chrome midori qutebrowser netsurf; do
+		if command -v "$b" >/dev/null 2>&1; then
+			browser="$b"
+			break
+		fi
+	done
+
+	if ps -e | grep -iE 'vnc|tigervnc|vncserver' | grep -v grep &>/dev/null; then
+		if ls "$HOME/.vnc/"*.pid 2>/dev/null; then
+			if [[ -n "$browser" ]]; then
+				"$browser" "$page" & disown
+			else
+				by_termux "$page"
+			fi
+		else
+			by_termux "$page"
+		fi
+	else
+		by_termux "$page"
+	fi
+}
+
+#EXITs HANDLERs
+echo
+on_exit() {
+	code=$?
+	echo -en "\e[0m\e[?25h"
+	if [ $code -ne 0 ]; then
+		info "Return code: $code"
+	fi
+	echo
+}
+trap on_exit EXIT
+on_abort() {
+	code=$?
+	if [[ $code -eq 0 ]]; then
+		code=$2
+	fi
+	error "Operation aborted by $1 signal."
+	exit "$code"
+}
+trap "on_abort SIGINT 130" SIGINT
+trap "on_abort SIGTERM 143" SIGTERM
+trap "on_abort SIGHUP 129" SIGHUP
+trap "on_abort SIGHUP 131" SIGQUIT
+
+#HANDLE PARAMETERS
+parse_args() {
+	if [ $# -lt 1 ]; then
+		error "The required parameter is missing."
+		info "Try to use -h|--help for more info."
+		exit 1
+	fi
+	until [ $# -eq 0 ]; do
+		case $1 in
+			R|-R|--run)
+				shift
+				info "Starting..."
+				if [ $# -gt 7 ]; then
+					error "Too many parameters."
+					info "Try to use -h|--help for more info."
+					exit 1
+				fi
+				until [ $# -eq 0 ]; do
+					case $1 in
+						-p|--provider) # GPS provider (gps|network|passive)
+							PROVIDER="$2"
+							[[ "$PROVIDER" =~ ^(gps|network|passive)$ ]] || { 
+								error "Provider must be gps|network|passive"
+								exit 1
+							}
+							shift 2
+							;;
+						-c|--countinuous) # Run in countinous loop
+							CONTINUOUS=true
+							shift
+							;;
+						-d|--delay) # Scan-to-scan intervals
+							DELAY="$2"
+							if [[ "$DELAY" == "none" ]]; then
+									ZERO_DELAY=true
+								fi
+								if ! $ZERO_DELAY; then
+									if ! [[ "$DELAY" =~ ^[0-9]+$ ]] || \
+									[ "$DELAY" -lt 1 ] || \
+									[ "$DELAY" -gt 3600 ]; then
+										error "Delay value must be 1-3600 or \"none\" for 0s delay."
+										exit 1
+									fi
+								fi
+							shift 2
+							;;
+						-q|--quiet) # Do not vibrate
+							DO_VIBRATE=false
+							shift
+							;;
+						-e|--exit-on-fail) # Exit on Termux API fail
+							EXIT_ON_FAIL=true
+							shift
+							;;
+						*) # Other/invalid parameters
+							error "Invalid parameter: $1"
+							info "Try to use -h|--help for more info."
+							exit 1
+							;;
+					esac
+				done
+				;;
+			C|-C|--cache)
+				shift
+				if [ $# -gt 1 ]; then
+					error "Too many parameters."
+					info "Try to use -h|--help for more info."
+					exit 1
+				elif [ $# -lt 1 ]; then
+					error "The required parameter is missing."
+					info "Try to use -h|--help for more info."
+					exit 1
+				fi
+				until [ $# -eq 0 ]; do
+					case $1 in
+						-l|--list) # List of collected APs
+							CACHE_LIST=true
+							shift
+							;;
+						-p|--purge) # Clear cache
+							CACHE_PURGE=true
+							shift
+							;;
+						-c|--count) # Show only AP's count
+							CACHE_COUNT=true
+							shift
+							;;
+						*) # Other/invalid parameters
+							error "Invalid parameter: $1"
+							info "Try to use -h|--help for more info."
+							exit 1
+							;;
+					esac
+				done
+				;;
+			S|-S|--save)
+				shift
+				if [ $# -gt 5 ]; then
+					error "Too many parameters."
+					info "Try to use -h|--help for more info."
+					exit 1
+				elif [ $# -lt 2 ]; then
+					error "The required parameter is missing."
+					info "Try to use -h|--help for more info."
+					exit 1
+				fi
+				DO_SAVE=true
+				until [ $# -eq 0 ]; do
+					case $1 in
+						-n|--name) # Specify output file name
+								SAVE_FILE="$2"
+								shift 2
+							;;
+						-f|--format) # Specify output file format (json/pjson/jsonl/csv/kml)
+								SAVE_FMT="$2"
+								shift 2
+							;;
+						-o|--override) # Allow override existing file
+								SAVE_OVERRIDE=true
+								shift
+							;;
+						*) # Other/invalid parameters
+								error "Invalid parameter: $1"
+								info "Try to use -h|--help for more info."
+								exit 1
+							;;
+					esac
+				done
+				if $DO_SAVE; then
+					if [ -z "$SAVE_FILE" ] || [ -z "$SAVE_FMT" ]; then
+						error "The required parameters are missing."
+						info "Try to use -h|--help for more info."
+						exit 1
+					fi
+				fi
+				;;
+			V|-V|--check)
+				shift
+				if [ $# -gt 1 ]; then
+					error "Too many parameters."
+					info "Try to use -h|--help for more info."
+					exit 1
+				elif [ $# -lt 1 ]; then
+					error "The required parameter is missing."
+					info "Try to use -h|--help for more info."
+					exit 1
+				fi
+				until [ $# -eq 0 ]; do
+					case $1 in
+						-*) # Other/invalid parameters
+							error "Invalid parameter: $1"
+							info "Try to use -h|--help for more info."
+							exit 1
+							;;
+						*) # Input file
+							VALID_FILE="$1"
+							shift
+							DO_VALID=true
+							;;
+					esac
+				done
+				;;
+			-h|--help) # Show help
+				show_help
+				exit 0
+				;;
+			-v|--version) # Show version
+				version_info
+				exit 0
+				;;
+			-i|--version-info) # Check version/changelog/current version
+				about_info
+				;;
+			--report)
+				info "Selecting browser..."
+				open_page $SCRIPT_REPORT
+				success "Done."
+				exit 0
+				;;
+			*) # Other/invalid parameters
+				error "Invalid parameter: $1"
+				info "Try to use -h|--help for more info."
+				exit 1
+				;;
+		esac
+	done
+}
+
+#CHECK DEPENDENCIES
+req() {
+	MISSING=false
+	for c in termux-wifi-scaninfo jq termux-location termux-api-start termux-api-stop timeout awk sed tr date termux-vibrate; do
+		command -v "$c" >/dev/null 2>&1 || { error "Missing: $c"; MISSING=true; }
+	done
+	if $MISSING; then
+		error "Some dependencies are missing."
+		exit 1
+	fi
+}
+
+#CREATE/TOUCH CACHE FILE
+ensure_cache() {
+	mkdir -p "$CACHE_DIR"
+	touch "$CACHE_FILE"
+}
+
+#RESTART TERMUX API
+api_restart() {
+	if $EXIT_ON_FAIL; then
+		info "The -e|--exit-on-fail option was enabled."
+		error "API failed. Aborting."
+		exit 1
+	else
+		ERRORS=0
+		info "Restarting API..."
+		termux-api-stop >/dev/null 2>&1
+		STATUS=$?
+		ERRORS=$((ERRORS + STATUS))
+		sleep 1
+		termux-api-start >/dev/null 2>&1
+		STATUS=$?
+		ERRORS=$((ERRORS + STATUS))
+		sleep 1
+		if [ $STATUS -ne 0 ]; then
+			error "Restarting failed."
+			exit 1
+		fi
+	fi
+}
+
+#GET DEVICE LOCATION
+get_location() {
+	local tries=0
+	while :; do
+		local j
+		j=$(timeout 15 termux-location -p "$PROVIDER" 2>/dev/null || true)
+		local lat lon alt
+		lat=$(printf "%s" "$j" | jq -r 'try .latitude // empty')
+		lon=$(printf "%s" "$j" | jq -r 'try .longitude // empty')
+		alt=$(printf "%s" "$j" | jq -r 'try .altitude // 0')
+		if [ -n "$lat" ] && [ -n "$lon" ]; then
+			echo "$lat;$lon;$alt"
+			return 0
+		fi
+		tries=$((tries+1))
+		[ $tries -ge 3 ] && {
+			if $EXIT_ON_FAIL; then
+				error "Fail. Aborting."
+				exit 129
+			else
+				return 1
+			fi
+		}
+		api_restart
+	done
+}
+
+#CHECK IF AP HAS AUTHENTICATION
+is_locked() {
+	printf "%s" "$1" | grep -Eq 'WEP|WPA|PSK|SAE'
+}
+
+#PRINT VERBOSE DATA
+print_net() {
+	local ssid="$1" bssid="$2" rssi="$3" freq="$4" caps="$5" lat="$6" lon="$7"
+	local hidden=""
+
+	if [ -z "$ssid" ] || [ "$ssid" = "null" ]; then
+		hidden="${YELLOW}[HIDDEN]${RESET} "
+		ssid="(hidden)"
+	fi
+
+	if is_locked "$caps"; then
+		printf "%b%b[LOCK]%b %s | %s | RSSI:%s | %sMHz | %s | %.8f,%.8f\n" \
+			"$hidden" "$RED" "$RESET" "$ssid" "$bssid" "$rssi" "$freq" "$caps" "$lat" "$lon"
+	else
+		printf "%b%b[OPEN]%b %s | %s | RSSI:%s | %sMHz | %s | %.8f,%.8f\n" \
+			"$hidden" "$GREEN" "$RESET" "$ssid" "$bssid" "$rssi" "$freq" "$caps" "$lat" "$lon"
+	fi
+}
+
+#JUST CURRENT TIME :)
+now_utc() {
+	date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+#SCAN LOGIC
+scan_once() {
+	local loc
+	loc=$(get_location) || { error "Location error (provider=$PROVIDER)."; api_restart; loc=$(get_location) || return 1; }
+
+	local lat lon alt
+	IFS=';' read -r lat lon alt <<<"$loc"
+
+	local raw
+	raw=$(termux-wifi-scaninfo 2>/dev/null || true)
+	if [ -z "$raw" ]; then
+		error "Wi-Fi scan failed."
+		api_restart
+		raw=$(termux-wifi-scaninfo 2>/dev/null || true)
+	fi
+	[ -z "$raw" ] && return 1
+
+	printf "%s" "$raw" | jq -c '.[] | {ssid:.ssid,bssid:.bssid,rssi:.rssi,frequency_mhz:.frequency_mhz,capabilities:.capabilities}' | while IFS= read -r line; do
+		local ssid bssid rssi freq caps
+		ssid=$(printf "%s" "$line" | jq -r '.ssid')
+		bssid=$(printf "%s" "$line" | jq -r '.bssid')
+		rssi=$(printf "%s" "$line" | jq -r '.rssi')
+		freq=$(printf "%s" "$line" | jq -r '.frequency_mhz')
+		caps=$(printf "%s" "$line" | jq -r '.capabilities')
+
+		if ! jq -e --arg ssid "$ssid" --arg bssid "$bssid" \
+			'select(.ssid==$ssid and .bssid==$bssid)' "$CACHE_FILE" >/dev/null; then
+			print_net "$ssid" "$bssid" "$rssi" "$freq" "$caps" "$lat" "$lon"
+			if $DO_VIBRATE; then
+				termux-vibrate -d 50
+			fi
+			printf "%s\n" "$line" | jq -c --arg t "$(now_utc)" --arg p "$PROVIDER" --argjson la "$lat" --argjson lo "$lon" --argjson al "${alt:-0}" \
+				'. + {time:$t,provider:$p,latitude:$la,longitude:$lo,altitude:$al}' >> "$CACHE_FILE"
+		fi
+	done
+}
+
+#LISTING APs FROM CACHE
+list_cache() {
+	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 0; }
+
+	local TOTAL SSID
+	TOTAL=$(wc -l < "$CACHE_FILE")
+	info "Entries count: $TOTAL"
+	echo
+
+	while IFS= read -r entry; do
+		SSID=$(jq -r 'if .ssid == null or .ssid == "" then "hidden" else .ssid end' <<<"$entry")
+		[[ $SSID == "hidden" ]] && SSID="\e[2m(hidden)\e[0m"
+		echo -e "\e[36mSSID\e[33m:\e[0m         $SSID"
+		echo -e "\e[36mBSSID\e[33m:\e[0m        $(jq -r '.bssid' <<<"$entry")"
+		echo -e "\e[36mRSSI\e[33m:\e[0m         $(jq -r '.rssi // ""' <<<"$entry")"
+		echo -e "\e[36mFrequency\e[33m:\e[0m    $(jq -r '.frequency_mhz // ""' <<<"$entry")"
+		echo -e "\e[36mCapabilities\e[33m:\e[0m $(jq -r '.capabilities // ""' <<<"$entry")"
+		echo -e "\e[36mProvider\e[33m:\e[0m     $(jq -r '.provider' <<<"$entry")"
+		echo -e "\e[36mLatitude\e[33m:\e[0m     $(jq -r '.latitude // ""' <<<"$entry")"
+		echo -e "\e[36mLongitude\e[33m:\e[0m    $(jq -r '.longitude // ""' <<<"$entry")"
+		echo -e "\e[36mAltitude\e[33m:\e[0m     $(jq -r '.altitude // ""' <<<"$entry")"
+		echo
+	done < "$CACHE_FILE"
+
+	success "Done - $TOTAL"
+}
+
+#COUNT OF CACHEs ELEMENTS
+count_cache() {
+	local TOTAL
+	TOTAL=$(wc -l < "$CACHE_FILE")
+	info "Entries count: $TOTAL"
+	success "Done"
+}
+
+#PURGE CACHE
+purge_cache() {
+	info "Are you sure you want to purge the script's cache? [y/N]"
+	echo -en "\e[1A"
+	read -rn1 answer
+	echo -ne "\r\e[K"
+	if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
+		rm -f "$CACHE_FILE"
+		ensure_cache
+		success "Cache purged."
+		exit 0
+	elif [[ "$answer" == "n" || "$answer" == "N" ]]; then
+		info "Operation aborted."
+		exit 0
+	else
+		error "Invalid option $answer!"
+		info "Operation aborted."
+		exit 1
+	fi
+}
+
+check_file_exists() {
+	if ! $SAVE_OVERRIDE; then
+		if [ -f "${SAVE_FILE}.${SAVE_EXT}" ]; then
+				error "File ${SAVE_FILE}.${SAVE_EXT} already exists."
+				info "Select another filename or try to use -o option."
+				exit 1
+		else
+			return 0
+		fi
+	else
+		return 0
+	fi
+}
+
+#SAVE JSONL TO JSON
+save_json_min() {
+	jq -cs '.' "$CACHE_FILE" | tr -d '\n' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
+	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
+}
+
+#SAVE JSONL TO PRETTY JSON
+save_json_pretty() {
+	jq -cs '.' "$CACHE_FILE" | jq '.' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
+	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
+}
+
+#SAVE JSONL TO JSONL (copy)
+save_json_list() {
+	{ [ -f "$CACHE_FILE" ] && [[ $( wc -l < "$CACHE_FILE" ) -gt 0 ]]; } && {
+		cp "$CACHE_FILE" "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
+		success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
+	} || { error "Cache empty: try to scan first."; exit 1; }
+}
+
+#SAVE JSONL TO CSV 
+save_csv() {
+	{
+		echo "time,ssid,bssid,rssi,frequency_mhz,capabilities,provider,latitude,longitude,altitude"
+		jq -r '. | [.time, (.ssid//"(hidden)"), .bssid, (.rssi//""), (.frequency_mhz//""), (.capabilities//""), .provider, (.latitude|tostring), (.longitude|tostring), (.altitude|tostring)] | @csv' "$CACHE_FILE"
+	} > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
+	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
+}
+
+#ADD JITTER TO LOCATIONS
+jitter_pair() {
+	local bssid="$1"
+	local seed
+	seed=$(printf "%s" "$bssid" | cksum | awk '{print $1}')
+	local a=$(( (seed % 1001) - 500 ))
+	local b=$(( ((seed/7) % 1001) - 500 ))
+	local dlat dlng
+	dlat=$(awk -v n="$a" 'BEGIN{printf "%.7f", n/10000000}')
+	dlng=$(awk -v n="$b" 'BEGIN{printf "%.7f", n/10000000}')
+	printf "%s;%s" "$dlat" "$dlng"
+}
+
+#SAVE JSONL TO KML
+save_kml() {
+	local tmp="$SAVE_FILE.tmp"
+	: > "$tmp"	
+	{
+		echo '<?xml version="1.0" encoding="UTF-8"?>'
+		echo '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+		echo '  <name>Termux-WiFi-map v1.0 (c) by BuriXon-code</name>'
+		echo '  <Style id="open"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-blank.png</href></Icon></IconStyle></Style>'
+		echo '  <Style id="lock"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-blank.png</href></Icon></IconStyle></Style>'
+	} >> "$tmp"
+	CURRENT=0
+	TOTAL=$(wc -l < "$CACHE_FILE")
+	PERCENT=$(( CURRENT*100/TOTAL ))
+	info "Progress data conversion... ${PERCENT}%"
+	echo -e "${YELLOW}[SSID]${RESET} Starting..."
+	jq -c '.' "$CACHE_FILE" 2>/dev/null | while IFS= read -r row; do
+		CURRENT=$(( CURRENT+1 ))
+		PERCENT=$(( CURRENT*100/TOTAL ))
+		echo -en "\e[2A"
+		info "Progress data conversion... ${PERCENT}%\e[K"
+		local ssid bssid caps time lat lon alt
+		ssid=$(printf "%s" "$row" | jq -r '(.ssid//"(hidden)")')
+		bssid=$(printf "%s" "$row" | jq -r '.bssid')
+		caps=$(printf "%s" "$row" | jq -r '(.capabilities//"")')
+		time=$(printf "%s" "$row" | jq -r '.time')
+		lat=$(printf "%s" "$row" | jq -r '.latitude')
+		lon=$(printf "%s" "$row" | jq -r '.longitude')
+		alt=$(printf "%s" "$row" | jq -r '(.altitude//0)')
+		echo -e "${YELLOW}[SSID]${RESET} ${ssid:-(hidden)}\e[K"
+		[ -z "$lat" ] || [ -z "$lon" ] && continue
+		local jl jg
+		IFS=';' read -r jl jg <<<"$(jitter_pair "$bssid")"
+		local jlat jlon
+		jlat=$(awk -v a="$lat" -v b="$jl" 'BEGIN{printf "%.8f", a+b}')
+		jlon=$(awk -v a="$lon" -v b="$jg" 'BEGIN{printf "%.8f", a+b}')
+		local style
+		if is_locked "$caps"; then style="#lock"; else style="#open"; fi
+		{
+			echo "  <Placemark>"
+			echo "    <name><![CDATA[$ssid]]></name>"
+			echo "    <description><![CDATA[$bssid | $caps | $time]]></description>"
+			echo "    <styleUrl>$style</styleUrl>"
+			echo "    <Point><coordinates>$jlon,$jlat,$alt</coordinates></Point>"
+			echo "  </Placemark>"
+		} >> "$tmp" || { error "Scan error."; exit 1; }
+	done
+	echo '</Document></kml>' >> "$tmp"
+	mv "$tmp" "${SAVE_FILE}.${SAVE_EXT}" || { error "Some error occured while saving file."; exit 1; }
+	echo -en "\e[1A"
+	echo -e "${YELLOW}[SSID]${RESET}\e[0m ---\e[K"
+	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
+}
+
+#SELECT SAVING METHOD
+do_save() {
+	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 1; }
+	case "$SAVE_FMT" in
+		json)
+			SAVE_EXT="json"
+			check_file_exists
+			save_json_min
+			;;
+		pjson)
+			SAVE_EXT="json"
+			check_file_exists
+			save_json_pretty
+			;;
+		jsonl)
+			SAVE_EXT="jsonl"
+			check_file_exists
+			save_json_list
+			;;
+		csv)
+			SAVE_EXT="csv"
+			check_file_exists
+			save_csv
+			;;
+		kml)
+			SAVE_EXT="kml"
+			check_file_exists
+			save_kml
+			;;
+		*)
+			error "Unknown format: $SAVE_FMT"
+			exit 1
+			;;
+	esac
+}
+
+#CHECK IF FILE CONTAINS VALID CONTENT
+valid() {
+	local FILE SSID MIME TYPE LINES
+	FILE="$VALID_FILE"
+	[ ! -f "$FILE" ] && error "No file: $FILE" && exit 1
+	
+	info "Checking: $FILE"
+	
+	MIME=$(file --mime-type -b "$FILE")
+	TYPE="unknown"
+	LINES=$(wc -l < "$FILE")
+	
+	case "$MIME" in
+	    application/xml|text/xml)
+	        if grep -q "<kml" "$FILE"; then
+	            TYPE="KML"
+	        fi
+	        ;;
+	    application/json)
+	        if [ "$LINES" -gt 1 ]; then
+	            TYPE="Pretty JSON"
+	        else
+	            TYPE="JSON"
+	        fi
+	        ;;
+	    application/x-ndjson)
+	        TYPE="JSONL"
+	        ;;
+	    text/csv)
+	        if grep -q ',' "$FILE"; then
+	            TYPE="CSV"
+	        fi
+	        ;;
+	esac
+	
+	info "Detected type: $TYPE"
+	
+	case "$TYPE" in
+	    KML)
+	  	    info "Validating KML..."
+	        if ! xmllint --noout "$FILE" 2>/dev/null; then
+	            error "File is not well-formed XML"
+	        else
+	            success "Well-formed XML"
+	        fi
+	
+	        NAME=$(grep -oPm1 "(?<=<name>).*?(?=</name>)" "$FILE" || echo "unknown")
+	        info "Name: $NAME"
+	
+	        POINTS=$(grep -o "<Point>" "$FILE" | wc -l)
+	        info "Points: $POINTS"
+	
+	        ICONS=$(grep -oPm999 "(?<=<href>).*?(?=</href>)" "$FILE" || true)
+	        if [ -n "$ICONS" ]; then
+	            info "Found href/icons:"
+	            while IFS= read -r icon; do
+	                echo "   - $icon"
+	                if [[ "$icon" =~ ^https?:// ]]; then
+	                    STATUS=$(curl -Is -o /dev/null -w "%{http_code}" --max-time 5 "$icon" || echo "000")
+	                    if [[ "$STATUS" == 200 ]]; then
+	                        success "      Link works (HTTP $STATUS)"
+	                    else
+	                        error "      Link problem (HTTP $STATUS)"
+	                    fi
+	                elif [ -f "$icon" ]; then
+	                    success "      Local file exists"
+	                else
+	                    error "      Local file not found"
+	                fi
+	            done <<< "$ICONS"
+	        else
+	            success "No custom icons"
+	        fi
+	
+	        TAGS=$(grep -o "<[^!?/][^ >/]*" "$FILE" | sed 's/[<]//' | sort -u)
+	        info "Tags in file:"
+	        echo "$TAGS" | sed 's/^/   - /'
+	
+	        info "Checking tag balance..."
+	        OPEN_TAGS=$(grep -o "<[^!?/][^ >/]*" "$FILE" | sed 's/[<]//' | sort | uniq -c)
+	        CLOSE_TAGS=$(grep -o "</[^>]*>" "$FILE" | sed 's/[<\/>]//g' | sort | uniq -c)
+	
+	        MISMATCH=0
+	        for t in $(echo "$OPEN_TAGS" | awk '{print $2}'); do
+	            open_count=$(echo "$OPEN_TAGS" | awk -v tag="$t" '$2==tag {print $1}')
+	            close_count=$(echo "$CLOSE_TAGS" | awk -v tag="$t" '$2==tag {print $1}')
+	            [ -z "$close_count" ] && close_count=0
+	            if [ "$open_count" -ne "$close_count" ]; then
+	                error "Tag <$t>: opened $open_count, closed $close_count"
+	                MISMATCH=1
+	            fi
+	        done
+	        [ $MISMATCH -eq 0 ] && success "Valid KML file."
+	        ;;
+	    CSV)
+	   		info "Validating CSV..."
+	        COLS=$(head -n1 "$FILE" | awk -v FPAT='([^,]+)|(\"[^\"]+\")' 'END{print NF}')
+	        BAD_LINES=""
+	        LINE_NO=0
+	        echo
+	        while IFS= read -r line; do
+	            SSID=$(echo -n "$line" | cut -d "," -f 2 | cut -d '"' -f 2)
+	            echo -e "\e[1A$SSID\e[K"
+	            LINE_NO=$((LINE_NO+1))
+	            COUNT=$(echo "$line" | awk -v FPAT='([^,]+)|(\"[^\"]+\")' 'END{print NF}')
+	            if [ "$COUNT" -ne "$COLS" ]; then
+	                BAD_LINES+="$LINE_NO "
+	            fi
+	        done < "$FILE"
+	
+	        if [ -n "$BAD_LINES" ]; then
+	            echo -en "\e[1A\e[K"
+	            error "Some lines have wrong number of columns:"
+	            echo "$BAD_LINES" | sed 's/^/   Line /'
+	        else
+	            echo -en "\e[1A\e[K"
+	            success "Valid CSV file."
+	        fi
+	        ;;
+	    JSON)
+	        info "Validating JSON..."
+	        if ! jq empty "$FILE" >/dev/null 2>&1; then
+	            error "JSON invalid"
+	        else
+	            COUNT=$(jq 'if type=="array" then length else 1 end' "$FILE")
+	            KEYS=$(jq -r 'if type=="array" then .[0] | keys[] else keys[] end' "$FILE" 2>/dev/null | sort -u)
+	            info "Top-level element count: $COUNT"
+	            info "Keys found:"
+	            echo "$KEYS" | sed 's/^/   - /'
+	            success "Valid JSON file."
+	        fi
+	        ;;
+	    Pretty\ JSON)
+	        info "Validating Pretty JSON..."
+	        if ! jq empty "$FILE" >/dev/null 2>&1; then
+	            error "Pretty JSON invalid"
+	        else
+	            COUNT=$(jq 'if type=="array" then length else 1 end' "$FILE")
+	            KEYS=$(jq -r 'if type=="array" then .[0] | keys[] else keys[] end' "$FILE" 2>/dev/null | sort -u)
+	            info "Top-level element count: $COUNT"
+	            info "Keys found:"
+	            echo "$KEYS" | sed 's/^/   - /'
+	            success "Valid Pretty JSON file."
+	        fi
+	        ;;
+	    JSONL)
+	        info "Validating JSONL..."
+	        LINE_NO=0
+	        BAD_LINES=""
+	        echo
+	        while IFS= read -r line; do
+	            SSID=$(echo -n "$line" | jq -r .ssid)
+	            echo -e "\e[1A$SSID\e[K"
+	            LINE_NO=$((LINE_NO+1))
+	            if ! echo "$line" | jq empty >/dev/null 2>&1; then
+	                BAD_LINES+="$LINE_NO "
+	            fi
+	        done < "$FILE"
+	        if [ -n "$BAD_LINES" ]; then
+	            echo -en "\e[1A\e[K"
+	            error "Invalid JSON on lines:$BAD_LINES"
+	        else
+	            echo -en "\e[1A\e[K"
+	            success "Valid JSONL file."
+	        fi
+	        ;;
+	    *)
+	        error "Could not determine exact file type, guessing..."
+	        SAMPLE=$(head -n200 "$FILE")
+	        MIGHT_TYPE="unknown"
+	
+	        CSV_LINES=$(echo "$SAMPLE" | awk -F',' 'BEGIN{count=0} NF>3{count++} END{print count}')
+	        if [ "$CSV_LINES" -ge 10 ]; then
+	            ONE_LINE=$(shuf -n1 "$FILE")
+	            CSV_LINE=$(echo "$ONE_LINE" | awk -F',' 'BEGIN{count=0} NF>3{count++} END{print count}')
+	            if [ "$CSV_LINE" -ge 3 ]; then
+	                MIGHT_TYPE="CSV"
+	            fi
+	        fi
+	
+	        if [ "$MIGHT_TYPE" = "unknown" ]; then
+	            LINES=$(echo "$SAMPLE" | wc -l)
+	
+	            JSONL_COUNT=0
+	            while IFS= read -r line; do
+	                if [[ "$line" =~ ^[[:space:]]*\{.*\}[[:space:]]*$ ]]; then
+	                    if echo "$line" | jq empty >/dev/null 2>&1; then
+	                        JSONL_COUNT=$((JSONL_COUNT+1))
+	                    fi
+	                fi
+	            done <<< "$SAMPLE"
+	
+	            if [ "$JSONL_COUNT" -ge 2 ]; then
+	                MIGHT_TYPE="JSONL"
+	            else
+	                FRAG=$(grep -o '{.*}' "$FILE" | shuf -n1)
+	                if [ -n "$FRAG" ] && echo "$FRAG" | jq empty >/dev/null 2>&1; then
+	                    MIGHT_TYPE="Pretty JSON"
+	                else
+	                    if jq empty "$FILE" >/dev/null 2>&1; then
+	                        MIGHT_TYPE="JSON"
+	                    fi
+	                fi
+	            fi
+	        fi
+	
+	        if [ "$MIGHT_TYPE" = "unknown" ] && echo "$SAMPLE" | grep -q '<xml'; then
+	            if [ "$MIGHT_TYPE" = "unknown" ] && echo "$SAMPLE" | grep -q '<kml'; then
+	                MIGHT_TYPE="KML"
+	            fi
+	        fi
+	
+	        if [[ "$MIGHT_TYPE" != "unknown" ]]; then
+	            info "Might be: $MIGHT_TYPE"
+	        else
+	            error "Unable to determine file type."
+	        fi
+	        ;;
+	esac
+}
+
+# RUN :)
+main() {
+	echo -en "\e[?25l"
+	req
+	ensure_cache
+	parse_args "$@"
+	if $DO_SAVE; then do_save; exit 0; fi
+	if $CACHE_LIST; then list_cache; exit 0; fi
+	if $DO_VALID; then valid; exit 0; fi
+	if $CACHE_COUNT; then count_cache; exit 0; fi
+	if $CACHE_PURGE; then purge_cache; fi
+	while :; do
+		scan_once || error "Scan error."
+		$CONTINUOUS || break
+		if ! $ZERO_DELAY; then
+			sleep "$DELAY"
+		fi
+	done
+}
+
+main "$@"
