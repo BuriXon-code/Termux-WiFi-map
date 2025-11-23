@@ -16,6 +16,9 @@ This README documents how to install, run and configure the tool, explains modes
 - Robust error handling: automatic Termux API restart routine (unless configured to exit).
 - Lightweight: written in POSIX/Bash and relies on Termux utilities — no root required.
 
+## More info:
+- Full documentation & examples: [Website](https://burixon.dev/projects/Termux-WiFi-map/)
+
 ## Quick overview
 - **Runner** (`--run`): triggers Wi-Fi scan(s), appends results to the internal cache (JSONL). Can run once or in continuous loop.
 - **Saver** (`--save`): reads the cache and writes it to a chosen export format/file.
@@ -50,49 +53,6 @@ Modes control the main action (scan/save/cache/validate), options tune behaviour
 | Check/Verify | `V` `-V` `--check` | Validate structure of a provided file (pass path as parameter). |
 | Help/Info | `-h` `--help` `-v` `--version` `-i` `--version-info` | Show help, version or extended about info. |
 
-### Options
-#### Run options
-- `-p|--provider [gps|network|passive]`  
-  Sets location provider for `termux-location`. Default: `gps`.  
-  - `gps` — uses device GPS (most accurate outdoors).  
-  - `network` — cell/Wi-Fi based (faster, less accurate).  
-  - `passive` — low-power passive updates.
-
-- `-d|--delay [seconds|none]`  
-  Delay between scans in continuous mode. Accepts integer 1–3600 or `none` for the shortest possible delay (script treats `none` as zero delay). Default: `10` seconds.
-
-- `-c|--countinuous`  
-  Runs scanning loop continuously (keeps appending to cache). Use with `--delay` to set frequency.
-
-- `-q|--quiet`  
-  Disable vibration feedback (`termux-vibrate`) during scanning.
-
-- `-e|--exit-on-fail`  
-  If Termux:API calls fail (e.g., `termux-location` or `termux-wifi-scaninfo`), the script will immediately exit instead of attempting to restart the API.
-
-Behavioural notes:
-- The location fetch routine will attempt up to 3 tries (with a 15s timeout per try) to get coordinates. If it fails and `--exit-on-fail` is not set, the script will attempt an API restart (`termux-api-stop` + `termux-api-start`) and retry.
-- Cache is newline-delimited JSON (JSONL) so each scan is appended as a JSON object on its own line.
-
-#### Save options
-- `-n|--name [filename]`  
-  Output filename (without extension). Required for `--save`.
-
-- `-f|--format [json|pjson|jsonl|csv|kml]`  
-  Output format. Required for `--save`.  
-  Example: `kml` produces a `.kml` file usable in Google Earth.
-
-- `-o|--override`  
-  Allow overwriting an existing output file. If omitted and the file exists, the script will abort to avoid accidental data loss.
-
-#### Cache options
-- `-l|--list` — list all cached APs (prints a summary).
-- `-c|--count` — show number of distinct APs in cache.
-- `-p|--purge` — clear the cache (removes internal cache file).
-
-#### Validation
-- `V file` — pass a path to the file you want to validate (e.g., exported JSON). The script checks structure and basic content consistency.
-
 ### Examples & recommended workflows
 (Examples / literal commands are provided below the code block — **not** inside this README block.)
 
@@ -105,7 +65,6 @@ Behavioural notes:
 ## Configuration & file locations
 - **Cache directory:** `$HOME/.cache/BuriXon-code` (script will create it if missing).  
 - **Cache file:** `$HOME/.cache/BuriXon-code/wifi_scan_cache.jsonl` (newline-delimited JSON objects).
-- **Log / output files:** saved to current working directory unless you pass a path as part of `--name`.
 
 ## Dependencies (full list the script checks)
 The script checks presence of these commands and will abort if any are missing:
@@ -116,8 +75,6 @@ The script checks presence of these commands and will abort if any are missing:
 - `timeout` (coreutils or busybox)
 - `awk`, `sed`, `tr`, `date` (shell utilities)
 - `termux-vibrate` (optional unless you rely on vibrations)
-
-Install `jq` explicitly — many Termux installs omit it by default.
 
 ## Troubleshooting & tips
 - If scans return no GPS coords: try switching provider to `network` (faster indoors) or increase GPS warmup time.  

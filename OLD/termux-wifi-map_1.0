@@ -1,22 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# shellcheck disable=2015,2001,2009,2034,2006
-
-# Debugging
-export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
-# set -x
-set -euo pipefail
 
  ##############################################
  # Author: Kamil BuriXon Burek (BuriXon-code) #
  # Name: Termux-WiFi-map (c) 2025             #
  # Description: Scan and save APs locations   #
  # License: GPLv3.0                           #
- # Version: v 2.0                             #
- # Changelog: major funcionality update       #
- # Todo: change cache'ing method to SQLite    #
+ # Version: v 1.0                             #
+ # Changelog: release                         #
+ # Todo: fix listing option (too slow)        #
  ##############################################
 
- # Termux-WiFi-map v2.0
+ # Termux-WiFi-map
  # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
  #
  # This program is free software: you can redistribute it and/or modify
@@ -32,53 +26,59 @@ set -euo pipefail
  # You should have received a copy of the GNU General Public License
  # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-# Variables
+# Debugging
+#export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
+#set -x
+
+# shellcheck disable=2015,2001,2009,2034
+
+set -euo pipefail
+
+#META
 SCRIPT_NAME="Termux-WiFi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
-SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="2.0"
-SCRIPT_V_R_DATE="2025"
+SCRIPT_VERSION="1.0"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_DONATE="https://burixon.dev/donate/"
 SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
 
+#PLACES
 CACHE_DIR="$HOME/.cache/BuriXon-code"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 
-PROVIDER="network"
+#RUN-OPTIONS
+PROVIDER="gps"
 DELAY=10
 ZERO_DELAY=false
 DO_VIBRATE=true
 EXIT_ON_FAIL=false
 CONTINUOUS=false
-AP_COUNT=0
-H_ENGINE="TERMUX"
-H_ENGINE_SET=false
 
+#SAVE-OPTIONS
 SAVE_OVERRIDE=false
 DO_SAVE=false
 SAVE_FILE=""
 SAVE_FMT=""
 SAVE_EXT=""
-SAVE_KML_NAME="$SCRIPT_NAME v$SCRIPT_VERSION (c) by $SCRIPT_AUTHOR_ALIAS"
 
+#CACHE-OPTIONS
 CACHE_LIST=false
 CACHE_PURGE=false
 CACHE_COUNT=false
-JSON_LIST=false
-CACHE_SEARCH=false
-SEARCH_PATTERN=""
 
+#VALID-OPTIONS
 DO_VALID="false"
 VALID_FILE=""
 
+#COLORS
 GREEN="\e[38;5;120m"
 RED="\e[38;5;203m"
 YELLOW="\e[38;5;229m"
 RESET="\e[0m"
+echo -en "\e[?25l"
 
-# Messages
+#STATUS MESSAGES
 error() {
 	echo -e "\r\e[1;31m[ERR!]\e[0m $*\e[K" >&2
 }
@@ -91,11 +91,11 @@ info() {
 show_help() {
 	version_info
 	echo -e "
-\e[1;36m[Usage]\e[0m $SCRIPT_COMMAND <mode> [options]
+\e[1;36m[Usage]\e[0m $SCRIPT_COMMAND [mode] [options]
 
 \e[1;36m[Modes]\e[0m
-  R|-R|--run		Start scanning and saving scanned WiFi networks to cache.
-  S|-S|--save		Save collected data to the chosen format (JSON, CSV, KML etc.).
+  R|-R|--run		Start scanning and saving WiFi networks to cache.
+  S|-S|--save		Save collected data to the chosen format.
   C|-C|--cache		Manage data in cache (list of known networks).
   V|-V|--check		Check the correctness of the given file structure.
   -v|--version		Display short info about the script version.
@@ -106,21 +106,17 @@ show_help() {
   -p|--provider [option]	Set GPS provider [gps|network|passive] (default: gps)
   -d|--delay [value]		Set delay between scans in seconds [int. 1-3600|none] (default: 10)
   -c|--countinuous		Set working mode to continuous (default: false)
-  -q|--quiet			Disable vibration/outputs during scanning (default: false)
-  -v|--haptic-engine [option]	Set up the haptic engine [bell|termux] (default: termux-vibrate)
+  -q|--quiet			Disable vibration during scanning (default: false)
   -e|--exit-on-fail		Exit on Termux:API error (default: false)\n
   \e[36m[SAVE]\e[0m
   -n|--name [filename]		Declare filename to save
   -f|--format [option]		Declare chosen output format [json|pjson|jsonl|csv|kml]
-  -o|--override			Allow overwriting an existing file
-  -k|--kml-name	[name]		Allow to set the name of the kml document\n
+  -o|--override			Allow overwriting an existing file\n
   \e[36m[CACHE]\e[0m
-  -l|--list			List all known APs (pretty but slow)
-  -j|--json			List all known APs as JSON (fast)
+  -l|--list			List all known APs
   -c|--count			Display the number of all known APs
-  -s|--search [pattern]		Search the given (comma-separated) phrases in the AP data
   -p|--purge			Clear the list of all known APs\n
-  \e[36m[CHECK]\e[0m
+  \e[36m[RUN]\e[0m
   /path/to/file			Path to the file to check\n
 \e[1;36m[Examples]\e[0m
   Scan once:
@@ -133,8 +129,6 @@ show_help() {
   $SCRIPT_COMMAND S -n file -f json -o\n
   List all cached APs:
   $SCRIPT_COMMAND -C -l\n
-  Search for phrases 'WiFi' and 'AP':
-  $SCRIPT_COMMAND -C -s \"WiFi,AP\"\n
   Check file.json integrity:
   $SCRIPT_COMMAND V file.json\n
   Show informations about script:
@@ -148,7 +142,7 @@ show_help() {
 "
 }
 version_info() {
-	info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
+	info "$SCRIPT_NAME v. $SCRIPT_VERSION (C) $SCRIPT_AUTHOR"
 }
 
 about_info() {
@@ -163,42 +157,36 @@ about_info() {
 [1.0] - Initial Release
 	This is the very first official release of Termux-WiFi-map. 
 	It marks the initial version of the tool, providing basic WiFi scanning, data saving, and validation features.
-	Future updates will expand functionality and improve usability.
-[2.0] - Major functionality update
-	This is the second release of the script which, due to the number of introduced changes, received a separate major release.
-	This version introduces many improvements, fixes errors and imperfections detected in the previous version and adds a range of new options and functionalities.
-	The most important implementations in this version include:
-	+ Fixing errors during data parsing by jq - in some Termux and termux-api installations the termux-api command incorrectly intercepted standard streams which caused corrupted JSON to be sent to jq;
-	+ Ability to choose a haptic engine - the user can select the vibration engine (termux-api or system bell) through appropriate CLI parameters;
-	+ Ability to list saved Access Points in raw JSON form - the previous formatted output generated for a very long time for large AP databases;
-	+ Ability to search the collected database - the user can search for specific phrases or strings in the database;
-	+ Ability to export specific searches - the user can export to one of the available formats those APs that were previously found.\n
+	Future updates will expand functionality and improve usability.\n
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license. \n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
 Visit \e[1;4;36mhttps://www.gnu.org/licenses/gpl-3.0.html\e[0m\e[K for more info.\n
 \e[1;36m[URL]\e[0m If you appreciate my work, consider making a donation at: \e[1;4;36m$SCRIPT_DONATE\e[0m\e[K\n
-\e[1;36m[URL]\e[0m More information about the script's functionality, version changes, usage, and tips can be found at: \e[1;4;36m$SCRIPT_PAGE\e[0m\e[K\n
-\e[1;36m[URL]\e[0mTo report an error visit the page: \e[1;4;36m$SCRIPT_REPORT\e[0m\e[K
+\e[1;36m[URL]\e[0m More information about the script's functionality, version changes, usage, and tips can be found at: \e[1;4;36m$SCRIPT_PAGE\e[0m\e[K
 "
-	# Webpage
-	info "Open page now? [y/N] "
-	read -rn1 answer
-	case "$answer" in
-		y)
-			echo -en "\e[1A\e[K"
-			info "Selecting browser..."
-			open_page $SCRIPT_PAGE
-			success "Done."
-			exit 0
-			;;
-		*)
-			info "Selected: $answer"
-			info "Aborting."
-			exit 0
-			;;
-	esac
+
+info "Open page now? [Y/n] "
+read -rn1 answer
+case "$answer" in
+	n|N)
+		info "Selected: $answer"
+		success "Done."
+		exit 0
+		;;
+	*)
+		echo -en "\e[1A\e[K"
+		info "Selecting browser..."
+		open_page $SCRIPT_PAGE
+		success "Done."
+		exit 0
+		;;
+esac
+
+#open_page $SCRIPT_PAGE
 }
+
+#OPEN INFO PAGE
 by_termux() {
 	if command -v termux-open-url &>/dev/null; then
 		termux-open-url "$1"
@@ -233,8 +221,8 @@ open_page() {
 	fi
 }
 
+#EXITs HANDLERs
 echo
-# Traps
 on_exit() {
 	code=$?
 	echo -en "\e[0m\e[?25h"
@@ -257,7 +245,7 @@ trap "on_abort SIGTERM 143" SIGTERM
 trap "on_abort SIGHUP 129" SIGHUP
 trap "on_abort SIGHUP 131" SIGQUIT
 
-# Parse args
+#HANDLE PARAMETERS
 parse_args() {
 	if [ $# -lt 1 ]; then
 		error "The required parameter is missing."
@@ -266,10 +254,6 @@ parse_args() {
 	fi
 	until [ $# -eq 0 ]; do
 		case $1 in
-			D|-D|--debug)
-				set -x
-				shift
-				;;
 			R|-R|--run)
 				shift
 				info "Starting..."
@@ -280,7 +264,7 @@ parse_args() {
 				fi
 				until [ $# -eq 0 ]; do
 					case $1 in
-						-p|--provider)
+						-p|--provider) # GPS provider (gps|network|passive)
 							PROVIDER="$2"
 							[[ "$PROVIDER" =~ ^(gps|network|passive)$ ]] || { 
 								error "Provider must be gps|network|passive"
@@ -288,11 +272,11 @@ parse_args() {
 							}
 							shift 2
 							;;
-						-c|--countinuous)
+						-c|--countinuous) # Run in countinous loop
 							CONTINUOUS=true
 							shift
 							;;
-						-d|--delay)
+						-d|--delay) # Scan-to-scan intervals
 							DELAY="$2"
 							if [[ "$DELAY" == "none" ]]; then
 									ZERO_DELAY=true
@@ -307,27 +291,15 @@ parse_args() {
 								fi
 							shift 2
 							;;
-						-q|--quiet)
-							if $H_ENGINE_SET; then error "Cannot set haptic engine if running quiet run."; exit 1; fi
-							echo -e "\e[2A"; info "Quiet run..."; echo
+						-q|--quiet) # Do not vibrate
 							DO_VIBRATE=false
 							shift
 							;;
-						-v|--haptic-engine)
-							H_ENGINE_SET=true
-							if ! $DO_VIBRATE; then error "Cannot set haptic engine if running quiet run."; exit 1; fi
-							case $2 in
-								bell) H_ENGINE="BELL" ;;
-								termux) H_ENGINE="TERMUX" ;;
-								*) error "Invalid haptic engine: $2"; exit 1 ;;
-							esac
-							shift 2
-							;;
-						-e|--exit-on-fail)
+						-e|--exit-on-fail) # Exit on Termux API fail
 							EXIT_ON_FAIL=true
 							shift
 							;;
-						*)
+						*) # Other/invalid parameters
 							error "Invalid parameter: $1"
 							info "Try to use -h|--help for more info."
 							exit 1
@@ -337,7 +309,7 @@ parse_args() {
 				;;
 			C|-C|--cache)
 				shift
-				if [ $# -gt 2 ]; then
+				if [ $# -gt 1 ]; then
 					error "Too many parameters."
 					info "Try to use -h|--help for more info."
 					exit 1
@@ -348,29 +320,19 @@ parse_args() {
 				fi
 				until [ $# -eq 0 ]; do
 					case $1 in
-						-l|--list)
+						-l|--list) # List of collected APs
 							CACHE_LIST=true
 							shift
 							;;
-						-j|--json)
-							CACHE_LIST=true
-							JSON_LIST=true
-							shift
-							;;
-						-p|--purge)
+						-p|--purge) # Clear cache
 							CACHE_PURGE=true
 							shift
 							;;
-						-c|--count)
+						-c|--count) # Show only AP's count
 							CACHE_COUNT=true
 							shift
 							;;
-						-s|--search)
-							CACHE_SEARCH=true
-							SEARCH_PATTERN="$2"
-							shift 2
-							;;
-						*)
+						*) # Other/invalid parameters
 							error "Invalid parameter: $1"
 							info "Try to use -h|--help for more info."
 							exit 1
@@ -380,7 +342,7 @@ parse_args() {
 				;;
 			S|-S|--save)
 				shift
-				if [ $# -gt 7 ]; then
+				if [ $# -gt 5 ]; then
 					error "Too many parameters."
 					info "Try to use -h|--help for more info."
 					exit 1
@@ -392,23 +354,19 @@ parse_args() {
 				DO_SAVE=true
 				until [ $# -eq 0 ]; do
 					case $1 in
-						-n|--name)
+						-n|--name) # Specify output file name
 								SAVE_FILE="$2"
 								shift 2
 							;;
-						-f|--format)
+						-f|--format) # Specify output file format (json/pjson/jsonl/csv/kml)
 								SAVE_FMT="$2"
 								shift 2
 							;;
-						-o|--override)
+						-o|--override) # Allow override existing file
 								SAVE_OVERRIDE=true
 								shift
 							;;
-						-k|--kml-name)
-								SAVE_KML_NAME="$2"
-								shift 2
-							;;
-						*)
+						*) # Other/invalid parameters
 								error "Invalid parameter: $1"
 								info "Try to use -h|--help for more info."
 								exit 1
@@ -436,12 +394,12 @@ parse_args() {
 				fi
 				until [ $# -eq 0 ]; do
 					case $1 in
-						-*)
+						-*) # Other/invalid parameters
 							error "Invalid parameter: $1"
 							info "Try to use -h|--help for more info."
 							exit 1
 							;;
-						*)
+						*) # Input file
 							VALID_FILE="$1"
 							shift
 							DO_VALID=true
@@ -449,15 +407,15 @@ parse_args() {
 					esac
 				done
 				;;
-			-h|--help)
+			-h|--help) # Show help
 				show_help
 				exit 0
 				;;
-			-v|--version)
+			-v|--version) # Show version
 				version_info
 				exit 0
 				;;
-			-i|--version-info)
+			-i|--version-info) # Check version/changelog/current version
 				about_info
 				;;
 			--report)
@@ -466,7 +424,7 @@ parse_args() {
 				success "Done."
 				exit 0
 				;;
-			*)
+			*) # Other/invalid parameters
 				error "Invalid parameter: $1"
 				info "Try to use -h|--help for more info."
 				exit 1
@@ -475,14 +433,7 @@ parse_args() {
 	done
 }
 
-# Catch stdout pipe'ing
-if [ -p /proc/$$/fd/1 ]; then
-	echo -e "\n${RED}[WARN]${RESET} $SCRIPT_COMMAND does not have a stable CLI interface. Use with caution in scripts.\n" >&2
-else
-	echo -en "\e[?25l"
-fi
-
-# Init
+#CHECK DEPENDENCIES
 req() {
 	MISSING=false
 	for c in termux-wifi-scaninfo jq termux-location termux-api-start termux-api-stop timeout awk sed tr date termux-vibrate; do
@@ -493,12 +444,14 @@ req() {
 		exit 1
 	fi
 }
+
+#CREATE/TOUCH CACHE FILE
 ensure_cache() {
 	mkdir -p "$CACHE_DIR"
 	touch "$CACHE_FILE"
 }
 
-# Restart API
+#RESTART TERMUX API
 api_restart() {
 	if $EXIT_ON_FAIL; then
 		info "The -e|--exit-on-fail option was enabled."
@@ -522,7 +475,7 @@ api_restart() {
 	fi
 }
 
-# Get location
+#GET DEVICE LOCATION
 get_location() {
 	local tries=0
 	while :; do
@@ -549,12 +502,12 @@ get_location() {
 	done
 }
 
-# Check caps.
+#CHECK IF AP HAS AUTHENTICATION
 is_locked() {
 	printf "%s" "$1" | grep -Eq 'WEP|WPA|PSK|SAE'
 }
 
-# Print verbose data
+#PRINT VERBOSE DATA
 print_net() {
 	local ssid="$1" bssid="$2" rssi="$3" freq="$4" caps="$5" lat="$6" lon="$7"
 	local hidden=""
@@ -578,7 +531,7 @@ now_utc() {
 	date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
-# Scan
+#SCAN LOGIC
 scan_once() {
 	local loc
 	loc=$(get_location) || { error "Location error (provider=$PROVIDER)."; api_restart; loc=$(get_location) || return 1; }
@@ -595,7 +548,7 @@ scan_once() {
 	fi
 	[ -z "$raw" ] && return 1
 
-	while IFS= read -r -u 3 line; do
+	printf "%s" "$raw" | jq -c '.[] | {ssid:.ssid,bssid:.bssid,rssi:.rssi,frequency_mhz:.frequency_mhz,capabilities:.capabilities}' | while IFS= read -r line; do
 		local ssid bssid rssi freq caps
 		ssid=$(printf "%s" "$line" | jq -r '.ssid')
 		bssid=$(printf "%s" "$line" | jq -r '.bssid')
@@ -605,23 +558,17 @@ scan_once() {
 
 		if ! jq -e --arg ssid "$ssid" --arg bssid "$bssid" \
 			'select(.ssid==$ssid and .bssid==$bssid)' "$CACHE_FILE" >/dev/null; then
+			print_net "$ssid" "$bssid" "$rssi" "$freq" "$caps" "$lat" "$lon"
 			if $DO_VIBRATE; then
-				case $H_ENGINE in
-					BELL) echo -en "\a" ;;
-					TERMUX) termux-vibrate -d 50 </dev/null >/dev/null ;;
-				esac
-				print_net "$ssid" "$bssid" "$rssi" "$freq" "$caps" "$lat" "$lon"
-			else
-				((AP_COUNT++))
-				echo -en "\e[1A"; info "Found $AP_COUNT..."
+				termux-vibrate -d 50
 			fi
 			printf "%s\n" "$line" | jq -c --arg t "$(now_utc)" --arg p "$PROVIDER" --argjson la "$lat" --argjson lo "$lon" --argjson al "${alt:-0}" \
 				'. + {time:$t,provider:$p,latitude:$la,longitude:$lo,altitude:$al}' >> "$CACHE_FILE"
 		fi
-	done 3< <(printf "%s" "$raw" | jq -c '.[] | {ssid:.ssid,bssid:.bssid,rssi:.rssi,frequency_mhz:.frequency_mhz,capabilities:.capabilities}')
+	done
 }
 
-# List
+#LISTING APs FROM CACHE
 list_cache() {
 	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 0; }
 
@@ -630,29 +577,25 @@ list_cache() {
 	info "Entries count: $TOTAL"
 	echo
 
-	if $JSON_LIST; then
-		cat "$CACHE_FILE" | jq
-	else
-		while IFS= read -r entry; do
-			SSID=$(jq -r 'if .ssid == null or .ssid == "" then "hidden" else .ssid end' <<<"$entry")
-			[[ $SSID == "hidden" ]] && SSID="\e[2m(hidden)\e[0m"
-			echo -e "\e[36mSSID\e[33m:\e[0m         $SSID"
-			echo -e "\e[36mBSSID\e[33m:\e[0m        $(jq -r '.bssid' <<<"$entry")"
-			echo -e "\e[36mRSSI\e[33m:\e[0m         $(jq -r '.rssi // ""' <<<"$entry")"
-			echo -e "\e[36mFrequency\e[33m:\e[0m    $(jq -r '.frequency_mhz // ""' <<<"$entry")"
-			echo -e "\e[36mCapabilities\e[33m:\e[0m $(jq -r '.capabilities // ""' <<<"$entry")"
-			echo -e "\e[36mProvider\e[33m:\e[0m     $(jq -r '.provider' <<<"$entry")"
-			echo -e "\e[36mLatitude\e[33m:\e[0m     $(jq -r '.latitude // ""' <<<"$entry")"
-			echo -e "\e[36mLongitude\e[33m:\e[0m    $(jq -r '.longitude // ""' <<<"$entry")"
-			echo -e "\e[36mAltitude\e[33m:\e[0m     $(jq -r '.altitude // ""' <<<"$entry")"
-			echo
-		done < "$CACHE_FILE"
-	fi
+	while IFS= read -r entry; do
+		SSID=$(jq -r 'if .ssid == null or .ssid == "" then "hidden" else .ssid end' <<<"$entry")
+		[[ $SSID == "hidden" ]] && SSID="\e[2m(hidden)\e[0m"
+		echo -e "\e[36mSSID\e[33m:\e[0m         $SSID"
+		echo -e "\e[36mBSSID\e[33m:\e[0m        $(jq -r '.bssid' <<<"$entry")"
+		echo -e "\e[36mRSSI\e[33m:\e[0m         $(jq -r '.rssi // ""' <<<"$entry")"
+		echo -e "\e[36mFrequency\e[33m:\e[0m    $(jq -r '.frequency_mhz // ""' <<<"$entry")"
+		echo -e "\e[36mCapabilities\e[33m:\e[0m $(jq -r '.capabilities // ""' <<<"$entry")"
+		echo -e "\e[36mProvider\e[33m:\e[0m     $(jq -r '.provider' <<<"$entry")"
+		echo -e "\e[36mLatitude\e[33m:\e[0m     $(jq -r '.latitude // ""' <<<"$entry")"
+		echo -e "\e[36mLongitude\e[33m:\e[0m    $(jq -r '.longitude // ""' <<<"$entry")"
+		echo -e "\e[36mAltitude\e[33m:\e[0m     $(jq -r '.altitude // ""' <<<"$entry")"
+		echo
+	done < "$CACHE_FILE"
 
 	success "Done - $TOTAL"
 }
 
-# Count
+#COUNT OF CACHEs ELEMENTS
 count_cache() {
 	local TOTAL
 	TOTAL=$(wc -l < "$CACHE_FILE")
@@ -660,7 +603,7 @@ count_cache() {
 	success "Done"
 }
 
-# Purge
+#PURGE CACHE
 purge_cache() {
 	info "Are you sure you want to purge the script's cache? [y/N]"
 	echo -en "\e[1A"
@@ -681,87 +624,6 @@ purge_cache() {
 	fi
 }
 
-# Search
-search_cache() {
-	colors=(200 196 208 226 155 159 123 118 111 10)	
-	for i in "${!colors[@]}"; do
-		j=$((RANDOM % (${#colors[@]} - i) + i))
-		tmp=${colors[i]}
-		colors[i]=${colors[j]}
-		colors[j]=$tmp
-	done
-	MATCHING_COUNT=0
-	if [ ! -f "$CACHE_FILE" ]; then
-		error "Cache file not found. Try to scan first."
-		exit 1
-	fi
-	if [ -z "$SEARCH_PATTERN" ] || ! [[ "$SEARCH_PATTERN" =~ [^[:space:]] ]]; then
-		error "Search pattern is empty."
-		exit 1
-	fi
-	IFS=',' read -ra arr <<< "$SEARCH_PATTERN"
-		if [ "${#arr[@]}" -gt 10 ]; then
-		error "Too many patterns: ${#arr[@]}. Maximum allowed is 10."
-		exit 1
-	fi
-	regex=`printf "%s|" "${arr[@]}"`
-	regex=${regex%|}
-	index=0
-	pattern_line=""
-	for pattern in "${arr[@]}"; do
-		color=${colors[$index]}
-		index=$((index+1))
-		pattern_line+=$(printf "\033[38;5;%sm\033[1m%s\033[0m " "$color" "$pattern")
-	done
-	info "Search patterns: $pattern_line"
-	if ! grep -E "$regex" "$CACHE_FILE" >/dev/null 2>&1; then
-		error "No matches found."
-		exit 1
-	fi
-	MATCHING_COUNT=`grep -E -c "$regex" "$CACHE_FILE"`
-	grep -E "$regex" "$CACHE_FILE" |
-	while IFS= read -r line; do
-		echo; info "Found:"
-		if ! json=`printf "%s" "$line" | jq . 2>/dev/null`; then
-			error "Failed to parse JSON."
-			exit 1
-		fi
-		index=0
-		out="$json"
-		for pattern in "${arr[@]}"; do
-			color=${colors[$index]}
-			index=$((index+1))
-			if ! out=`printf "%s" "$out" | sed "s/${pattern}/$(printf '\033[38;5;%sm\033[1m%s\033[0m' "$color" "$pattern")/g"`; then
-				error "Failed during formatting."
-				exit 1
-			fi
-		done
-		printf "%s\n" "$out"
-		MATCHING_COUNT=$((MATCHING_COUNT+1))
-	done
-	echo; info "Search patterns: $pattern_line"
-	info "Matching: $MATCHING_COUNT"
-	info "Export founded data? [y/N] "
-	read -rn1 do_export
-	case "$do_export" in
-		y)
-			FILTERED_CACHE=$(mktemp)
-			grep -E "$regex" "$CACHE_FILE" > "$FILTERED_CACHE"
-			echo -en "\e[?25h`info "Select output format (json|jsonl|pjson|csv|kml): "`"
-			read -r FILTERED_FMT
-			echo -en "\e[?25l"
-			do_save "$FILTERED_CACHE" "$FILTERED_FMT"
-			;;
-		*)
-			info "Selected: $do_export"
-			info "Aborting."
-			;;
-	esac
-	success "Done."
-	exit 0
-}
-
-# Check file
 check_file_exists() {
 	if ! $SAVE_OVERRIDE; then
 		if [ -f "${SAVE_FILE}.${SAVE_EXT}" ]; then
@@ -776,19 +638,19 @@ check_file_exists() {
 	fi
 }
 
-# Save json
+#SAVE JSONL TO JSON
 save_json_min() {
 	jq -cs '.' "$CACHE_FILE" | tr -d '\n' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
-# Save pretty json
+#SAVE JSONL TO PRETTY JSON
 save_json_pretty() {
 	jq -cs '.' "$CACHE_FILE" | jq '.' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
-# Save jsonl
+#SAVE JSONL TO JSONL (copy)
 save_json_list() {
 	{ [ -f "$CACHE_FILE" ] && [[ $( wc -l < "$CACHE_FILE" ) -gt 0 ]]; } && {
 		cp "$CACHE_FILE" "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
@@ -796,7 +658,7 @@ save_json_list() {
 	} || { error "Cache empty: try to scan first."; exit 1; }
 }
 
-# Save csv 
+#SAVE JSONL TO CSV 
 save_csv() {
 	{
 		echo "time,ssid,bssid,rssi,frequency_mhz,capabilities,provider,latitude,longitude,altitude"
@@ -805,7 +667,7 @@ save_csv() {
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
-# Jitter for KML
+#ADD JITTER TO LOCATIONS
 jitter_pair() {
 	local bssid="$1"
 	local seed
@@ -818,14 +680,14 @@ jitter_pair() {
 	printf "%s;%s" "$dlat" "$dlng"
 }
 
-# Save kml
+#SAVE JSONL TO KML
 save_kml() {
 	local tmp="$SAVE_FILE.tmp"
 	: > "$tmp"	
 	{
 		echo '<?xml version="1.0" encoding="UTF-8"?>'
 		echo '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
-		echo "  <name>$SAVE_KML_NAME</name>"
+		echo '  <name>Termux-WiFi-map v1.0 (c) by BuriXon-code</name>'
 		echo '  <Style id="open"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-blank.png</href></Icon></IconStyle></Style>'
 		echo '  <Style id="lock"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-blank.png</href></Icon></IconStyle></Style>'
 	} >> "$tmp"
@@ -872,14 +734,8 @@ save_kml() {
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
-# Save method
+#SELECT SAVING METHOD
 do_save() {
-	if [ $# -eq 2 ]; then
-		CACHE_FILE="$1"
-		SAVE_FMT="$2"
-		SAVE_FILE="$SEARCH_PATTERN"
-		SAVE_OVERRIDE=true
-	fi
 	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 1; }
 	case "$SAVE_FMT" in
 		json)
@@ -914,7 +770,7 @@ do_save() {
 	esac
 }
 
-# Check
+#CHECK IF FILE CONTAINS VALID CONTENT
 valid() {
 	local FILE SSID MIME TYPE LINES
 	FILE="$VALID_FILE"
@@ -1137,6 +993,7 @@ valid() {
 
 # RUN :)
 main() {
+	echo -en "\e[?25l"
 	req
 	ensure_cache
 	parse_args "$@"
@@ -1145,7 +1002,6 @@ main() {
 	if $DO_VALID; then valid; exit 0; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
-	if $CACHE_SEARCH; then search_cache; fi
 	while :; do
 		scan_once || error "Scan error."
 		$CONTINUOUS || break
