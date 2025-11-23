@@ -46,7 +46,7 @@ SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
 CACHE_DIR="$HOME/.cache/BuriXon-code"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 
-PROVIDER="network"
+PROVIDER="gps"
 DELAY=10
 ZERO_DELAY=false
 DO_VIBRATE=true
