@@ -138,7 +138,7 @@ show_help() {
   Check file.json integrity:
   $SCRIPT_COMMAND V file.json\n
   Show informations about script:
-  $SCRIPT_COMMAND --version_info\n
+  $SCRIPT_COMMAND --version-info\n
 \e[1;36m[Formats]\e[0m
   JSON		Classic single-line JSON
   PJSON		Pretty formatted JSON
