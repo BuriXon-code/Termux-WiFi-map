@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# shellcheck disable=2015,2001,2009,2034,2006
+# shellcheck disable=1090,2015,2001,2009,2034,2006
 
 # Debugging
 export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
@@ -37,7 +37,7 @@ SCRIPT_NAME="Termux-WiFi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="2.0"
+SCRIPT_VERSION="2.1"
 SCRIPT_V_R_DATE="2025"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_DONATE="https://burixon.dev/donate/"
@@ -45,12 +45,14 @@ SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
 
 CACHE_DIR="$HOME/.cache/BuriXon-code"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
+LOCATION_FILE="$CACHE_DIR/wifi_scan_last_loc.env"
 
-PROVIDER="gps"
+PROVIDER="network"
 DELAY=10
 ZERO_DELAY=false
 DO_VIBRATE=true
 EXIT_ON_FAIL=false
+TRY_PREV_LOC=false
 CONTINUOUS=false
 AP_COUNT=0
 H_ENGINE="TERMUX"
@@ -108,6 +110,7 @@ show_help() {
   -c|--countinuous		Set working mode to continuous (default: false)
   -q|--quiet			Disable vibration/outputs during scanning (default: false)
   -v|--haptic-engine [option]	Set up the haptic engine [bell|termux] (default: termux-vibrate)
+  -l|--last-location		Use last known location in case of Termux:API error.
   -e|--exit-on-fail		Exit on Termux:API error (default: false)\n
   \e[36m[SAVE]\e[0m
   -n|--name [filename]		Declare filename to save
@@ -138,7 +141,7 @@ show_help() {
   Check file.json integrity:
   $SCRIPT_COMMAND V file.json\n
   Show informations about script:
-  $SCRIPT_COMMAND --version-info\n
+  $SCRIPT_COMMAND --version_info\n
 \e[1;36m[Formats]\e[0m
   JSON		Classic single-line JSON
   PJSON		Pretty formatted JSON
@@ -172,8 +175,10 @@ about_info() {
 	+ Ability to choose a haptic engine - the user can select the vibration engine (termux-api or system bell) through appropriate CLI parameters;
 	+ Ability to list saved Access Points in raw JSON form - the previous formatted output generated for a very long time for large AP databases;
 	+ Ability to search the collected database - the user can search for specific phrases or strings in the database;
-	+ Ability to export specific searches - the user can export to one of the available formats those APs that were previously found.\n
-\e[1;36m[License]\e[0m The script is released under the GPLv3 license. \n
+	+ Ability to export specific searches - the user can export to one of the available formats those APs that were previously found.
+[2.1] - Funcionality update
+	This update adds an option to use the previously known location if a location update fails. Useful, among others, when scanning inside buildings.\n
+\e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
 Visit \e[1;4;36mhttps://www.gnu.org/licenses/gpl-3.0.html\e[0m\e[K for more info.\n
@@ -273,7 +278,7 @@ parse_args() {
 			R|-R|--run)
 				shift
 				info "Starting..."
-				if [ $# -gt 7 ]; then
+				if [ $# -gt 8 ]; then
 					error "Too many parameters."
 					info "Try to use -h|--help for more info."
 					exit 1
@@ -324,7 +329,19 @@ parse_args() {
 							shift 2
 							;;
 						-e|--exit-on-fail)
+							$TRY_PREV_LOC && {
+								error Cannot combine -e and -l.
+								exit 1
+							}
 							EXIT_ON_FAIL=true
+							shift
+							;;
+						-l|--prev-location)
+							$EXIT_ON_FAIL && {
+								error Cannot combine -e and -l.
+								exit 1
+							}
+							TRY_PREV_LOC=true
 							shift
 							;;
 						*)
@@ -496,6 +513,7 @@ req() {
 ensure_cache() {
 	mkdir -p "$CACHE_DIR"
 	touch "$CACHE_FILE"
+	touch "$LOCATION_FILE"
 }
 
 # Restart API
@@ -524,29 +542,29 @@ api_restart() {
 
 # Get location
 get_location() {
-	local tries=0
-	while :; do
-		local j
-		j=$(timeout 15 termux-location -p "$PROVIDER" 2>/dev/null || true)
-		local lat lon alt
-		lat=$(printf "%s" "$j" | jq -r 'try .latitude // empty')
-		lon=$(printf "%s" "$j" | jq -r 'try .longitude // empty')
-		alt=$(printf "%s" "$j" | jq -r 'try .altitude // 0')
+	local j lat lon alt
+
+	j=$(timeout 5 termux-location -p "$PROVIDER" 2>/dev/null || true)
+
+	lat=$(printf "%s" "$j" | jq -r 'try .latitude // empty')
+	lon=$(printf "%s" "$j" | jq -r 'try .longitude // empty')
+	alt=$(printf "%s" "$j" | jq -r 'try .altitude // 0')
+
+	if [ -n "$lat" ] && [ -n "$lon" ]; then
+		printf "lat=%s\nlon=%s\nalt=%s\n" "$lat" "$lon" "$alt" > "$LOCATION_FILE"
+		echo "$lat;$lon;$alt;true"
+		return 0
+	fi
+
+	if [ "$TRY_PREV_LOC" = true ] && [ -s "$LOCATION_FILE" ]; then
+		. "$LOCATION_FILE"
 		if [ -n "$lat" ] && [ -n "$lon" ]; then
-			echo "$lat;$lon;$alt"
+			echo "$lat;$lon;${alt:-0};false"
 			return 0
 		fi
-		tries=$((tries+1))
-		[ $tries -ge 3 ] && {
-			if $EXIT_ON_FAIL; then
-				error "Fail. Aborting."
-				exit 129
-			else
-				return 1
-			fi
-		}
-		api_restart
-	done
+	fi
+
+	return 1
 }
 
 # Check caps.
@@ -583,8 +601,8 @@ scan_once() {
 	local loc
 	loc=$(get_location) || { error "Location error (provider=$PROVIDER)."; api_restart; loc=$(get_location) || return 1; }
 
-	local lat lon alt
-	IFS=';' read -r lat lon alt <<<"$loc"
+	local lat lon alt cache
+	IFS=';' read -r lat lon alt api <<<"$loc"
 
 	local raw
 	raw=$(termux-wifi-scaninfo 2>/dev/null || true)
@@ -608,15 +626,15 @@ scan_once() {
 			if $DO_VIBRATE; then
 				case $H_ENGINE in
 					BELL) echo -en "\a" ;;
-					TERMUX) termux-vibrate -d 50 </dev/null >/dev/null ;;
+					TERMUX) $api && termux-vibrate -d 50 </dev/null >/dev/null ;;
 				esac
 				print_net "$ssid" "$bssid" "$rssi" "$freq" "$caps" "$lat" "$lon"
 			else
 				((AP_COUNT++))
 				echo -en "\e[1A"; info "Found $AP_COUNT..."
 			fi
-			printf "%s\n" "$line" | jq -c --arg t "$(now_utc)" --arg p "$PROVIDER" --argjson la "$lat" --argjson lo "$lon" --argjson al "${alt:-0}" \
-				'. + {time:$t,provider:$p,latitude:$la,longitude:$lo,altitude:$al}' >> "$CACHE_FILE"
+			printf "%s\n" "$line" | jq -c --arg t "$(now_utc)" --arg p "$PROVIDER" --argjson la "$lat" --argjson lo "$lon" --argjson al "${alt:-0}" --argjson ap "$api" \
+				'. + {time:$t,provider:$p,latitude:$la,longitude:$lo,altitude:$al,api:$ap}' >> "$CACHE_FILE"
 		fi
 	done 3< <(printf "%s" "$raw" | jq -c '.[] | {ssid:.ssid,bssid:.bssid,rssi:.rssi,frequency_mhz:.frequency_mhz,capabilities:.capabilities}')
 }
@@ -828,6 +846,7 @@ save_kml() {
 		echo "  <name>$SAVE_KML_NAME</name>"
 		echo '  <Style id="open"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-blank.png</href></Icon></IconStyle></Style>'
 		echo '  <Style id="lock"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-blank.png</href></Icon></IconStyle></Style>'
+		echo '  <Style id="cache"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-blank.png</href></Icon></IconStyle></Style>'
 	} >> "$tmp"
 	CURRENT=0
 	TOTAL=$(wc -l < "$CACHE_FILE")
@@ -847,6 +866,7 @@ save_kml() {
 		lat=$(printf "%s" "$row" | jq -r '.latitude')
 		lon=$(printf "%s" "$row" | jq -r '.longitude')
 		alt=$(printf "%s" "$row" | jq -r '(.altitude//0)')
+		api=$(printf "%s" "$row" | jq -r 'if .api == false then "false" else "true" end')
 		echo -e "${YELLOW}[SSID]${RESET} ${ssid:-(hidden)}\e[K"
 		[ -z "$lat" ] || [ -z "$lon" ] && continue
 		local jl jg
@@ -856,6 +876,7 @@ save_kml() {
 		jlon=$(awk -v a="$lon" -v b="$jg" 'BEGIN{printf "%.8f", a+b}')
 		local style
 		if is_locked "$caps"; then style="#lock"; else style="#open"; fi
+		if [[ "$api" == "false" ]]; then style="#cache"; fi
 		{
 			echo "  <Placemark>"
 			echo "    <name><![CDATA[$ssid]]></name>"
