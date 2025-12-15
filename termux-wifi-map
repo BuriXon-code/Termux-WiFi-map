@@ -47,7 +47,7 @@ CACHE_DIR="$HOME/.cache/BuriXon-code"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 LOCATION_FILE="$CACHE_DIR/wifi_scan_last_loc.env"
 
-PROVIDER="network"
+PROVIDER="gps"
 DELAY=10
 ZERO_DELAY=false
 DO_VIBRATE=true
@@ -544,7 +544,7 @@ api_restart() {
 get_location() {
 	local j lat lon alt
 
-	j=$(timeout 5 termux-location -p "$PROVIDER" 2>/dev/null || true)
+	j=$(timeout 10 termux-location -p "$PROVIDER" 2>/dev/null || true)
 
 	lat=$(printf "%s" "$j" | jq -r 'try .latitude // empty')
 	lon=$(printf "%s" "$j" | jq -r 'try .longitude // empty')
