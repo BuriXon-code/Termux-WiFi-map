@@ -11,12 +11,12 @@ set -euo pipefail
  # Name: Termux-WiFi-map (c) 2025             #
  # Description: Scan and save APs locations   #
  # License: GPLv3.0                           #
- # Version: v 2.0                             #
- # Changelog: major funcionality update       #
+ # Version: v 2.1                             #
+ # Changelog: funcionality update             #
  # Todo: change cache'ing method to SQLite    #
  ##############################################
 
- # Termux-WiFi-map v2.0
+ # Termux-WiFi-map v2.1
  # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
  #
  # This program is free software: you can redistribute it and/or modify
