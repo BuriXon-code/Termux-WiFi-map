@@ -24,6 +24,7 @@ This README documents how to install, run and configure the tool, explains modes
 - **Saver** (`--save`): reads the cache and writes it to a chosen export format/file.
 - **Cache manager** (`--cache`): view, count or purge the internal cache.
 - **Validator** (`--check`): checks a provided file for structure/format errors.
+- **Aliases** (`--check`): manage dynamic aliases/shortcuts.
 - **Helpers**: version info, about, and help output.
 
 ## Output formats
@@ -51,10 +52,8 @@ Modes control the main action (scan/save/cache/validate), options tune behaviour
 | Save | `S` `-S` `--save` | Export cached data to a file in chosen format (json/pjson/jsonl/csv/kml). Requires `--name` and `--format`. |
 | Cache | `C` `-C` `--cache` | Cache management: list (`--list`), count (`--count`), purge (`--purge`). |
 | Check/Verify | `V` `-V` `--check` | Validate structure of a provided file (pass path as parameter). |
+| Alias | `A` `-A` `--alias` | Create/manage/run dynamic script/option aliases |
 | Help/Info | `-h` `--help` `-v` `--version` `-i` `--version-info` | Show help, version or extended about info. |
-
-### Examples & recommended workflows
-(Examples / literal commands are provided below the code block — **not** inside this README block.)
 
 #### Typical workflows
 - Quick scan & inspect: run a single scan (`--run`) and then `--cache --list` to see what was captured.
@@ -63,8 +62,8 @@ Modes control the main action (scan/save/cache/validate), options tune behaviour
 - Data analysis: export to `csv` or `jsonl` then import to your analysis tool (Excel, Pandas, etc.).
 
 ## Configuration & file locations
-- **Cache directory:** `$HOME/.cache/BuriXon-code` (script will create it if missing).  
-- **Cache file:** `$HOME/.cache/BuriXon-code/wifi_scan_cache.jsonl` (newline-delimited JSON objects).
+- **Cache directory:** `$HOME/.cache/BuriXon-code/Termux-WiFi-map/` (script will create it if missing).  
+- **Cache file:** `$HOME/.cache/BuriXon-code/Termux-WiFi-map/wifi_scan_cache.jsonl` (newline-delimited JSON objects).
 
 ## Dependencies (full list the script checks)
 The script checks presence of these commands and will abort if any are missing:
@@ -75,10 +74,11 @@ The script checks presence of these commands and will abort if any are missing:
 - `timeout` (coreutils or busybox)
 - `awk`, `sed`, `tr`, `date` (shell utilities)
 - `termux-vibrate` (optional unless you rely on vibrations)
+- `tput`, `stty` (terminal formatting)
 
 ## Troubleshooting & tips
 - If scans return no GPS coords: try switching provider to `network` (faster indoors) or increase GPS warmup time.  
-- If Termux:API calls start failing after some time, use `--exit-on-fail` to force immediate exit (helps when running via systemd-like wrappers) or let the script attempt API restart.  
+- If Termux:API calls start failing after some time, use `--exit-on-fail` to force immediate exit, `--last-location` to use last know location or let the script attempt API restart.  
 - For large continuous captures, rotate/export cache regularly to avoid huge files. JSONL is stream-friendly — you can tail it while scanning.
 - When using CSV exports, check how special characters are escaped (SSID characters) — prefer JSON/JSONL if you need full fidelity.
 

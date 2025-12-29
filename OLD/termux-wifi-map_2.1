@@ -1,23 +1,22 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068
+# shellcheck disable=1090,2015,2001,2009,2034,2006
 
 # Debugging
 export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
-
-# Set shell
-set -eo pipefail
+# set -x
+set -euo pipefail
 
  ##############################################
  # Author: Kamil BuriXon Burek (BuriXon-code) #
  # Name: Termux-WiFi-map (c) 2025             #
  # Description: Scan and save APs locations   #
  # License: GPLv3.0                           #
- # Version: v 2.2                             #
+ # Version: v 2.1                             #
  # Changelog: funcionality update             #
- # Todo: - - -                                #
+ # Todo: change cache'ing method to SQLite    #
  ##############################################
 
- # Termux-WiFi-map v2.2
+ # Termux-WiFi-map v2.1
  # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
  #
  # This program is free software: you can redistribute it and/or modify
@@ -35,23 +34,20 @@ set -eo pipefail
 
 # Variables
 SCRIPT_NAME="Termux-WiFi-map"
-SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="2.2"
+SCRIPT_VERSION="2.1"
 SCRIPT_V_R_DATE="2025"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_DONATE="https://burixon.dev/donate/"
 SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
-SHOW_BANNER=true
-ASCI_RETURN="\e[0m"
 
-CACHE_DIR="$HOME/.cache/BuriXon-code/Termux-WiFi-map"
+CACHE_DIR="$HOME/.cache/BuriXon-code"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 LOCATION_FILE="$CACHE_DIR/wifi_scan_last_loc.env"
 
-PROVIDER="network"
+PROVIDER="gps"
 DELAY=10
 ZERO_DELAY=false
 DO_VIBRATE=true
@@ -59,10 +55,8 @@ EXIT_ON_FAIL=false
 TRY_PREV_LOC=false
 CONTINUOUS=false
 AP_COUNT=0
-GPS_TIMEOUT=10
 H_ENGINE="TERMUX"
 H_ENGINE_SET=false
-FROM_ALIAS=false
 
 SAVE_OVERRIDE=false
 DO_SAVE=false
@@ -99,28 +93,24 @@ info() {
 show_help() {
 	version_info
 	echo -e "
-\e[1;36m[Usage]\e[0m $SCRIPT_COMMAND [D] [mode] [options]
+\e[1;36m[Usage]\e[0m $SCRIPT_COMMAND <mode> [options]
 
 \e[1;36m[Modes]\e[0m
   R|-R|--run		Start scanning and saving scanned WiFi networks to cache.
   S|-S|--save		Save collected data to the chosen format (JSON, CSV, KML etc.).
   C|-C|--cache		Manage data in cache (list of known networks).
   V|-V|--check		Check the correctness of the given file structure.
-  A|-A|--alias		Manage fast-access command aliases.
-  D|-D|--debug		Enable debugging info (outputs).
-  -v|--version		Display short info about the script version and exit.
-  -i|--version-info	Displays detailed info about the script and exit.
-  -h|--help		Displays information about options and script usage and exit.
-  [alias name]		Run the selected alias (if exists).\n
+  -v|--version		Display short info about the script version.
+  -i|--version-info	Displays detailed info about the script.
+  -h|--help		Displays information about options and script usage.\n
 \e[1;36m[Options]\e[0m
   \e[36m[RUN]\e[0m
   -p|--provider [option]	Set GPS provider [gps|network|passive] (default: gps)
-  -d|--delay [value]		Set delay between scans in seconds [int. 0-3600] (default: 10)
+  -d|--delay [value]		Set delay between scans in seconds [int. 1-3600|none] (default: 10)
   -c|--countinuous		Set working mode to continuous (default: false)
   -q|--quiet			Disable vibration/outputs during scanning (default: false)
   -v|--haptic-engine [option]	Set up the haptic engine [bell|termux] (default: termux-vibrate)
   -l|--last-location		Use last known location in case of Termux:API error.
-  -t|--timeout [value]	Set the timeout for location retrieval [1-3600] (default: 10)
   -e|--exit-on-fail		Exit on Termux:API error (default: false)\n
   \e[36m[SAVE]\e[0m
   -n|--name [filename]		Declare filename to save
@@ -133,15 +123,6 @@ show_help() {
   -c|--count			Display the number of all known APs
   -s|--search [pattern]		Search the given (comma-separated) phrases in the AP data
   -p|--purge			Clear the list of all known APs\n
-  \e[36m[ALIAS]\e[0m
-  -a|--add [name] [options]	Add a new command alias/shortcut by specifying the name and target parameters
-  -l|--list [name]		List the created aliases/shortcuts along with their contents (specified or all)
-  -e|--edit [name]		Edit the selected alias. The editing is done in the default text editor
-  -d|--delete [name]		Delete the selected alias/shortcut. This operation cannot be undone
-  -r|--run [name]		Run the selected alias
-  -b|--bin [name]		Create exec symlink in \$PATH directory
-  -u|--unbin [name]		Remove existing scripts symlink
-  [name]			Run the selected alias.\n
   \e[36m[CHECK]\e[0m
   /path/to/file			Path to the file to check\n
 \e[1;36m[Examples]\e[0m
@@ -159,147 +140,24 @@ show_help() {
   $SCRIPT_COMMAND -C -s \"WiFi,AP\"\n
   Check file.json integrity:
   $SCRIPT_COMMAND V file.json\n
-  Create new loop-scan alias \"run\":
-  $SCRIPT_COMMAND A -a run R -c -d 5 -t 5 -q\n
-  Run created \"run\" alias:
-  $SCRIPT_COMMAND run
-  $SCRIPT_COMMAND A run\n
   Show informations about script:
   $SCRIPT_COMMAND --version_info\n
-\e[1;36m[File formats]\e[0m
-  JSON		Classic single-line (compact) JSON
+\e[1;36m[Formats]\e[0m
+  JSON		Classic single-line JSON
   PJSON		Pretty formatted JSON
   JSONL		Newline-delimited JSON
   CSV		Comma-separated values
-  KML		Format for representing points on maps\n
-\e[1;36m[Return codes]\e[0m
-  Code 1 - invalid input/option/value - the provided parameter or parameter value is invalid;
-  Code 2 - dependency error - required dependencies are missing;
-  Code 3 - cache error - error while creating the cache/database directory or cache empty/unreadable;
-  Code 4 - termux-api error - Termux API error, error retrieving location, scanning networks, enabling Wi-Fi, or restarting the API;
-  Code 5 - input/outout file error - file read or write error, error exporting data.
-  Code 6 - invalid input pattern - no results match the selected pattern;
-  Code 7 - processing error - error while pricessing raw data;
-  Code 8 - empty cache - attempted operation on non-existent data;
+  KML		Format for representing points on maps
 "
-	exit 0
 }
-
-banner() {
-	$SHOW_BANNER || return 0
-	stty -echo
-	CWIFI="\e[38;5;9m"
-	CBLU="\e[1;38;5;75m"
-	CRED="\e[1;38;5;9m"
-	CLINK="\e[1;4;36m"
-	CRESET="\e[0m"
-	print_logo_gt65() {
-		echo -e "\e[?7l\e[?25l
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⣀⣤⣶⣿⠷⠾⠛⠛⠛⠛⠷⠶⢶⣶⣤⣄⡀⠀⠀⠀⠀⠀⠀
-${CWIFI}⠀⠀⠀⠀⣀⣴⡾⠛⠉⠁⠀         ⠀⠉⠛⠿⣷⣄⡀⠀⠀⠀${CBLU}  _____                             \e[K
-${CWIFI}⠀⠀⣠⣾⠟⠁⠀⠀⠀⠀⠀         ⠀⠀⠀⠀⠈⠛⢿⣦⡀ ${CBLU}⠀|_   _|___ ___ _____ _ _ _ _       \e[K
-${CWIFI}⢠⣼⠟⠁⠀⠀⠀⠀⣠⣴⣶⣿⣿⣿⣿⣿⣿⣿⣿⣷⣦⣄⠀⠀⠀⠀⠀⠙⣧⡀${CBLU}   | | | -_|  _|     | | |_'_|      \e[K
-${CWIFI}⣿⡇⠀⠀⠀⢀⣴⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⢈⣷${CBLU}   |_| |___|_| |_|_|_|___|_,_|      \e[K
-${CWIFI}⣿⣿⣦⡀⣠⣾⣿⣿⣿⡿⠟⠛⠁⠁⠁⠁⠁⠁⠛⠻⢿⣿⣿⣿⣿⣆⣀⣠⣾⣿${CBLU}                                    \e[K
-${CWIFI}⠉⠻⣿⣿⣿⣿⣽⡿⠋⠀⠀        ⠀⠀⠉⠻⣿⣿⣿⣿⣿⠟⠁${CRED}  _ _ _ _ _____ _                   \e[K
-${CWIFI}⠀⠀⠈⠙⠛⣿⣿⠀⠀⠀⠀      ⠀⠀⠀⠀ ⠀⣹⣿⡟⠋⠁⠀⠀${CRED} | | | |_|   __|_|${CBLU}___ _____ ___ ___ \e[K
-${CWIFI}⠀⠀⠀⠀⠀⢿⣿⣷⣄⣀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣷⣀⣀⣾⣿⣿⠇⠀⠀⠀⠀${CRED} | | | | |   __| |${CBLU}___|     | .'| . |\e[K
-${CWIFI}⠀⠀⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⣿⠟⠛⠛⠻⣿⣿⣿⣿⣿⡿⠛⠉⠀⠀⠀⠀⠀${CRED} |_____|_|__|  |_|${CBLU}   |_|_|_|__,|  _|\e[K
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠁⣿⡇⠀⠀⠀⠀⢸⣿⡏⠙⠋⠁⠀⠀⠀⠀⠀⠀⠀${CRED}                  ${CBLU}             |_|  \e[K
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣷⣄⠀⠀⣀⣾⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀ ⠀ 
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⠀⠀           ${ANIM1}\e[K
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀        ⠀⠀           ${ANIM2}\e[K\e[?7h
-\e[16A"
-	}
-	print_logo_lt65() {
-		echo -e "\e[?7l\e[?25l
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⣀⣤⣶⣿⠷⠾⠛⠛⠛⠛⠷⠶⢶⣶⣤⣄⡀⠀⠀⠀⠀⠀⠀
-${CWIFI}⠀⠀⠀⠀⣀⣴⡾⠛⠉⠁⠀         ⠀⠉⠛⠿⣷⣄⡀⠀⠀⠀
-${CWIFI}⠀⠀⣠⣾⠟⠁⠀⠀⠀⠀⠀         ⠀⠀⠀⠀⠈⠛⢿⣦⡀ 
-${CWIFI}⢠⣼⠟⠁⠀⠀⠀⠀⣠⣴⣶⣿⣿⣿⣿⣿⣿⣿⣿⣷⣦⣄⠀⠀⠀⠀⠀⠙⣧⡀
-${CWIFI}⣿⡇⠀⠀⠀⢀⣴⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⡀⠀⠀⠀⢈⣷
-${CWIFI}⣿⣿⣦⡀⣠⣾⣿⣿⣿⡿⠟⠛⠁⠁⠁⠁⠁⠁⠛⠻⢿⣿⣿⣿⣿⣆⣀⣠⣾⣿
-${CWIFI}⠉⠻⣿⣿⣿⣿⣽⡿⠋⠀⠀        ⠀⠀⠉⠻⣿⣿⣿⣿⣿⠟⠁
-${CWIFI}⠀⠀⠈⠙⠛⣿⣿⠀⠀⠀⠀      ⠀⠀⠀⠀ ⠀⣹⣿⡟⠋⠁⠀⠀
-${CWIFI}⠀⠀⠀⠀⠀⢿⣿⣷⣄⣀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣷⣀⣀⣾⣿⣿⠇⠀⠀⠀⠀
-${CWIFI}⠀⠀⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⣿⠟⠛⠛⠻⣿⣿⣿⣿⣿⡿⠛⠉⠀⠀⠀⠀⠀
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠁⣿⡇⠀⠀⠀⠀⢸⣿⡏⠙⠋⠁⠀⠀⠀⠀⠀⠀⠀
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣷⣄⠀⠀⣀⣾⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀ 
-${CWIFI}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⠀⠀          
-${CBLU}  _____                             \e[K
-${CBLU}⠀|_   _|___ ___ _____ _ _ _ _       \e[K
-${CBLU}   | | | -_|  _|     | | |_'_|      \e[K
-${CBLU}   |_| |___|_| |_|_|_|___|_,_|      \e[K
-${CBLU}                                    \e[K
-${CRED}  _ _ _ _ _____ _                   \e[K
-${CRED} | | | |_|   __|_|${CBLU}___ _____ ___ ___ \e[K
-${CRED} | | | | |   __| |${CBLU}___|     | .'| . |\e[K
-${CRED} |_____|_|__|  |_|${CBLU}   |_|_|_|__,|  _|\e[K
-${CRED}                  ${CBLU}             |_|  \e[K\n
-⠀ ${ANIM1}\e[K
-  ${ANIM2}\e[K\e[?7h
-\e[28A"
-	}
-	ANIM1_FULL=" >>>   Made by BuriXon-code   <<<"
-	ANIM2_FULL=" >>>   https://burixon.dev/   <<< "
-	
-	for ((i=1; i<=${#ANIM1_FULL}+${#ANIM2_FULL}; i++)); do
-		ANIM1=""
-		ANIM2=""
-	
-		for ((j=0; j<${#ANIM1_FULL}; j++)); do
-			c="${ANIM1_FULL:j:1}"
-			if (( j == i-1 )); then
-				ANIM1+="\e[1;38;5;228m${c}${CRESET}"
-			elif (( j < i-1 )); then
-				if (( j >= 14 && j <= 27 )); then
-					ANIM1+="${CWIFI}${c}${CRESET}"
-				else
-					ANIM1+="${CBLU}${c}${CRESET}"
-				fi
-			else
-				ANIM1+=" "
-			fi
-		done
-	
-		if (( i > ${#ANIM1_FULL} )); then
-			k=$((i-${#ANIM1_FULL}-1))
-			for ((j=0; j<${#ANIM2_FULL}; j++)); do
-				c="${ANIM2_FULL:j:1}"
-				if (( j == k )); then
-					ANIM2+="\e[1;38;5;228m${c}${CRESET}"
-				elif (( j < k )); then
-					if (( j >= 7 && j <= 26 )); then
-						ANIM2+="${CLINK}${c}${CRESET}"
-					else
-						ANIM2+="${CBLU}${c}${CRESET}"
-					fi
-				else
-					ANIM2+=" "
-				fi
-			done
-		fi
-
-		if [ `tput cols` -lt 65 ]; then
-			ASCI_RETURN="\e[29B"
-			print_logo_lt65 >&2
-		else
-			ASCI_RETURN="\e[17B"
-			print_logo_gt65 >&2
-		fi
-	done
-	stty echo
-}
-
 version_info() {
-	banner
-	echo -e "${ASCI_RETURN}"
 	info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
 }
+
 about_info() {
 	version_info
 	echo -e "
-\e[1;36m[About]\e[0m The script \e[1m$SCRIPT_COMMAND_O\e[0m, which is the main executable component of the Termux-WiFi-map project, is a tool that allows you to build a database of WiFi networks in your surroundings directly in Termux.\n
+\e[1;36m[About]\e[0m The script \e[1m$(basename "$0")\e[0m, which is the main executable component of the Termux-WiFi-map project, is a tool that allows you to build a database of WiFi networks in your surroundings directly in Termux.\n
 \e[1;36m[Options]\e[0m Among the available options, you can find:
 	+ scanning with various options
 	+ saving collected data to JSON, CSV, KML files
@@ -319,20 +177,14 @@ about_info() {
 	+ Ability to search the collected database - the user can search for specific phrases or strings in the database;
 	+ Ability to export specific searches - the user can export to one of the available formats those APs that were previously found.
 [2.1] - Funcionality update
-	This update adds an option to use the previously known location if a location update fails. Useful, among others, when scanning inside buildings.
-[2.2] - Functionality update
-	This version introduces many improvements and simplifications for the user. The most important ones include:
-	+ An option to interactively select the operating mode without the need to enter long CLI parameters;
-	+ An option to create dynamic aliases/shortcuts for options, allowing you to avoid typing long CLI parameters;
-	+ The ability to set a custom timeout for location retrieval from termux-api (useful when GPS signal is unstable);
-	+ Added debugging options (first parameter: \"D\").\n
+	This update adds an option to use the previously known location if a location update fails. Useful, among others, when scanning inside buildings.\n
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
 Visit \e[1;4;36mhttps://www.gnu.org/licenses/gpl-3.0.html\e[0m\e[K for more info.\n
 \e[1;36m[URL]\e[0m If you appreciate my work, consider making a donation at: \e[1;4;36m$SCRIPT_DONATE\e[0m\e[K\n
-\e[1;36m[URL]\e[0m To report an error visit the page: \e[1;4;36m$SCRIPT_REPORT\e[0m\e[K
 \e[1;36m[URL]\e[0m More information about the script's functionality, version changes, usage, and tips can be found at: \e[1;4;36m$SCRIPT_PAGE\e[0m\e[K\n
+\e[1;36m[URL]\e[0mTo report an error visit the page: \e[1;4;36m$SCRIPT_REPORT\e[0m\e[K
 "
 	# Webpage
 	info "Open page now? [y/N] "
@@ -343,14 +195,14 @@ Visit \e[1;4;36mhttps://www.gnu.org/licenses/gpl-3.0.html\e[0m\e[K for more info
 			info "Selecting browser..."
 			open_page $SCRIPT_PAGE
 			success "Done."
+			exit 0
 			;;
 		*)
 			info "Selected: $answer"
 			info "Aborting."
+			exit 0
 			;;
 	esac
-	SHOW_BANNER=false
-	show_help
 }
 by_termux() {
 	if command -v termux-open-url &>/dev/null; then
@@ -374,7 +226,7 @@ open_page() {
 	if ps -e | grep -iE 'vnc|tigervnc|vncserver' | grep -v grep &>/dev/null; then
 		if ls "$HOME/.vnc/"*.pid 2>/dev/null; then
 			if [[ -n "$browser" ]]; then
-				"$browser" "$page" &>/dev/null & disown
+				"$browser" "$page" & disown
 			else
 				by_termux "$page"
 			fi
@@ -385,17 +237,15 @@ open_page() {
 		by_termux "$page"
 	fi
 }
+
+echo
 # Traps
 on_exit() {
 	code=$?
-	echo -en "\e[0m\e[?25h\e[?7h"
-	if $FROM_ALIAS && [ $code -eq 1 ]; then
-		info "Some of alias parameters may be incorrect. Use -h|--help to find out."
-	fi
+	echo -en "\e[0m\e[?25h"
 	if [ $code -ne 0 ]; then
-		info "Return code: $code\e[J"
+		info "Return code: $code"
 	fi
-	stty echo
 	echo
 }
 trap on_exit EXIT
@@ -415,204 +265,20 @@ trap "on_abort SIGHUP 131" SIGQUIT
 # Parse args
 parse_args() {
 	if [ $# -lt 1 ]; then
-		banner
-		echo -e "${ASCI_RETURN}"
-		info "Select work mode:"
-		menu_select MODE  "RUN - scan mode" "SAVE - export mode" "CACHE - DB management" "ABORT"
-		success "Selected work mode: $MODE"
-		case "$MODE" in
-			RUN*)
-				local ASK_HAPTIC=false
-				local ASK_DELAY=false
-				local ASK_ERROR=false
-				info "Run in loop?"
-				menu_select LOOP YES NO ABORT
-				case $LOOP in
-					YES) CONTINUOUS=true; success "Work in loop"; ASK_DELAY=true; ASK_ERROR=true ;;
-					NO) CONTINUOUS=false; success "Scan once" ;;
-					ABORT) info Aborting.; exit 0 ;;
-					*) error Invalid option $LOOP. How did you do that?; exit 1 ;;
-				esac
-				if $ASK_DELAY; then
-					echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter delay value [0-3600]s: \e[K"
-					IFS=" " read -r DELAY GARBAGE
-					if [[ ! "$DELAY" =~ ^[0-9]+$ ]] || [ $DELAY -gt 3600 ]; then
-						error "Delay value must be 0-3600s."
-						exit 1
-					fi
-					echo -e "\e[2A\e[?25l"
-					success "Delay value: ${DELAY}s"
-				fi
-				echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter location fetching timeout [1-3600]s: \e[K"
-				IFS=" " read -r GPS_TIMEOUT GARBAGE
-				if ! [[ "$GPS_TIMEOUT" =~ ^[0-9]+$ ]] || \
-				[ "$GPS_TIMEOUT" -lt 1 ] || \
-				[ "$GPS_TIMEOUT" -gt 3600 ]; then
-					error "Timeout value must be 1-3600."
-					exit 1
-				fi
-				echo -e "\e[2A\e[?25l"
-				success "Timeout value: ${GPS_TIMEOUT}s"
-				if $ASK_ERROR; then
-					info "What to do on timeout?"
-					menu_select ON_TIMEOUT "EXIT ON TIMEOUT" "USE PREVIOUS LOCATION" "NONE OF ABOVE" "ABORT"
-					case "$ON_TIMEOUT" in
-						EXIT*) EXIT_ON_FAIL=true; success "Exit on timeout" ;;
-						USE*) TRY_PREV_LOC=true; success "Use previous location" ;;
-						NONE*) success "Run w/o error handler" ;;
-						ABORT) info Aborting.; exit 0 ;;
-						*) error Invalid option $ASK_ERROR. How did you do that?; exit 1 ;;
-					esac
-				fi
-				info "Run in quiet mode?"
-				menu_select QUIET "YES" "NO" "ABORT"
-				case $QUIET in
-					YES) DO_VIBRATE=false; AP_COUNT=0; success "Quiet run" ;;
-					NO) DO_VIBRATE=true; success "Full output run"; ASK_HAPTIC=true ;;
-					ABORT) info Aborting.; exit 0 ;;
-					*) error Invalid option $QUIET. How did you do that?; exit 1 ;;
-				esac
-				if $ASK_HAPTIC; then
-					info "Choose vibrations engine:"
-					menu_select H_ENGINE "TERMUX" "BELL" "EXIT"
-					if [[ "$H_ENGINE" == "EXIT" ]]; then
-						info Aborting.
-						exit 0
-					fi
-					success "Vibrations engine: $H_ENGINE"
-				fi
-				info "Select location provider:"
-				menu_select LOCATION_PROVIDER GPS NETWORK PASSIVE ABORT
-				case $LOCATION_PROVIDER in
-					GPS) PROVIDER="gps" ;;
-					NETWORK) PROVIDER="network" ;;
-					PASSIVE) PROVIDER="passive" ;;
-					ABORT) info Aborting.; exit 0 ;;
-					*) error Invalid option $LOCATION_PROVIDER. How did you do that?; exit 1 ;;
-				esac
-				success "Location provider: $LOCATION_PROVIDER\n"
-				info "Configuration ready."
-				info "Press any key to continue or CTRL+C to abort...\n"
-				read -rsn1 any_key
-				info Starting...
-				while :; do
-					scan_once || error "Scan error."
-					$CONTINUOUS || break
-					if ! $ZERO_DELAY; then
-						sleep "$DELAY"
-					fi
-				done
-			;; 
-			SAVE*)
-				local ASK_KML=false
-				DO_SAVE=true
-				info "Select target file format:"
-				menu_select FORMAT JSON "PRETTY JSON" JSONL CSV KML ABORT
-				case "$FORMAT" in
-					KML) ASK_KML=true; SAVE_FMT=kml; EXT="$SAVE_FMT" ;;
-					CSV) SAVE_FMT=csv; EXT="$SAVE_FMT" ;;
-					JSON) SAVE_FMT=json; EXT="$SAVE_FMT" ;;
-					JSONL) SAVE_FMT=jsonl; EXT="$SAVE_FMT" ;;
-					PRETTY*) SAVE_FMT=pjson; EXT=json ;;
-					ABORT) info Aborting.; exit 0 ;;
-					*) error Invalid option $FORMAT. How did you do that?; exit 1 ;;
-				esac
-				success "Format: $FORMAT [#.$EXT]"
-				echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter target filename [w/o extension]: \e[K"
-				IFS= read -r SAVE_FILE
-				echo -e "\e[2A\e[?25l"
-				success "Filename: ${SAVE_FILE}.${EXT}"
-				if $ASK_KML; then
-					menu_select KMLNAME DEFAULT CUSTOM ABORT
-					case $KMLNAME in
-						DEFAULT) SAVE_KML_NAME="$SAVE_KML_NAME" ;;
-						CUSTOM)
-							success "Selected name: $KMLNAME"
-							echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter KML Document name: \e[K"
-							IFS= read -r NEW_SAVE_KML_NAME
-							echo -e "\e[2A\e[?25l"
-							if [ -z "$NEW_SAVE_KML_NAME" ]; then
-								error Using default KML Document name.
-								SAVE_KML_NAME="$SAVE_KML_NAME"
-							else
-								SAVE_KML_NAME="$NEW_SAVE_KML_NAME"
-							fi
-						;;
-						ABORT) info Aborting.; exit 0 ;;
-						*) error Invalid option $KMLNAME. How did you do that?; exit 1 ;;
-					esac
-					success "KML Document name: $SAVE_KML_NAME"
-				fi
-				if [ -f "${SAVE_FILE}.${EXT}" ]; then
-					info "File exists. Override?:"
-					menu_select OVERRIDE YES NO
-					case $OVERRIDE in
-						YES) success Writing new data to file.; SAVE_OVERRIDE=true ;;
-						NO) error File exists. Aborting.; exit 1 ;;
-						*) error Invalid option $OVERRIDE. How did you do that?; exit 1 ;;
-					esac
-				else
-					success Writing new data to file.; SAVE_OVERRIDE=true
-				fi
-				do_save
-				exit 0
-			;;
-			CACHE*)
-				JSON_LIST=false
-				info "Select operation:"
-				menu_select CACHE_OP "List in pretty format [slow]" "List in JSON [fast]" "Count data records" "Search for patterns" "Purge all database contents" ABORT
-				case "$CACHE_OP" in
-					List\ in\ pretty*) success "Listing..."; list_cache; exit 0 ;;
-					List\ in\ JSON*) success "Listing..."; JSON_LIST=true; list_cache; exit 0 ;;
-					Count*) success "Counting..."; count_cache; exit 0 ;;
-					Search*)
-						info "Enter search patterns one-by-one bellow."
-						info "Enter empty to finish."
-						PATTERNS=""
-						CYCLE=1
-						until [ "$CYCLE" -gt 10 ]; do
-							ERROR=false
-							echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter phrase to find: \e[K"
-							IFS=" " read -r PHRASE GARBAGE
-							echo -en ,"\e[1A\e[?25l"
-							if [ -n "$GARBAGE" ] || [[ "$PHRASE" =~ [,] ]]; then
-								error "Need 1 phrase without spaces or commas."
-								ERROR=true
-							elif [ -z "$PHRASE" ]; then
-								success "Empty. Finishing."
-								break
-							else
-								success "Pattern $CYCLE: $PHRASE"
-								PHRASE="$PHRASE,"
-								PATTERNS="${PHRASE}${PATTERNS}"
-							fi
-							if ! $ERROR; then ((CYCLE++)); fi
-						done
-						success "Got $((CYCLE-1)) patterns: $PATTERNS"
-						if [ -z "$PATTERNS" ]; then
-							error "Empty..."
-							exit 1
-						fi
-						DO_SAVE=true
-						SEARCH_PATTERN="$PATTERNS"
-						search_cache
-					;;
-					Purge*) success "Selected: ${CACHE_OP}..."; purge_cache ;;
-					ABORT) info Aborting.; exit 0 ;;
-					*) error Invalid option $CACHE_OP. How did you do that?; exit 1 ;;
-				esac
-			;;
-			ABORT) info Aborting.; exit 0 ;;
-			*) error "Invalid option $MODE"; exit 1 ;;
-		esac
-		exit 0
+		error "The required parameter is missing."
+		info "Try to use -h|--help for more info."
+		exit 1
 	fi
 	until [ $# -eq 0 ]; do
 		case $1 in
-			D|-D|--debug) set -x; shift; echo $@ ;;
+			D|-D|--debug)
+				set -x
+				shift
+				;;
 			R|-R|--run)
 				shift
-				if [ $# -gt 10 ]; then
+				info "Starting..."
+				if [ $# -gt 8 ]; then
 					error "Too many parameters."
 					info "Try to use -h|--help for more info."
 					exit 1
@@ -633,27 +299,17 @@ parse_args() {
 							;;
 						-d|--delay)
 							DELAY="$2"
-							if [[ "$DELAY" == "0" ]]; then
-								ZERO_DELAY=true
-							fi
-							if ! $ZERO_DELAY; then
-								if ! [[ "$DELAY" =~ ^[0-9]+$ ]] || \
-								[ "$DELAY" -lt 1 ] || \
-								[ "$DELAY" -gt 3600 ]; then
-									error "Delay value must be 0-3600s."
-									exit 1
+							if [[ "$DELAY" == "none" ]]; then
+									ZERO_DELAY=true
 								fi
-							fi
-							shift 2
-							;;
-						-t|--timeout)
-							GPS_TIMEOUT="$2"
-							if ! [[ "$GPS_TIMEOUT" =~ ^[0-9]+$ ]] || \
-							[ "$GPS_TIMEOUT" -lt 1 ] || \
-							[ "$GPS_TIMEOUT" -gt 3600 ]; then
-								error "Timeout value must be 1-3600."
-								exit 1
-							fi
+								if ! $ZERO_DELAY; then
+									if ! [[ "$DELAY" =~ ^[0-9]+$ ]] || \
+									[ "$DELAY" -lt 1 ] || \
+									[ "$DELAY" -gt 3600 ]; then
+										error "Delay value must be 1-3600 or \"none\" for 0s delay."
+										exit 1
+									fi
+								fi
 							shift 2
 							;;
 						-q|--quiet)
@@ -778,86 +434,11 @@ parse_args() {
 				done
 				if $DO_SAVE; then
 					if [ -z "$SAVE_FILE" ] || [ -z "$SAVE_FMT" ]; then
-						error "The required parameter is missing."
+						error "The required parameters are missing."
 						info "Try to use -h|--help for more info."
 						exit 1
 					fi
 				fi
-				;;
-			A|-A|--alias)
-				shift
-				if [ $# -lt 1 ]; then error Must specify alias-mode; exit 1; fi
-				case $1 in
-					-a|--add) shift; alias_mod add $* ;; 
-					-l|--list) shift; alias_mod list $* ;;
-					-e|--edit) shift; alias_mod edit $* ;;
-					-d|--delete) shift; alias_mod delete $* ;;
-					-r|--run) shift; alias_run $* ;;
-					-b|--bin)
-						shift
-						TARGET_BIN="$1"
-						if [ $# -ne 1 ] || [ -z "$1" ]; then
-							error Must specify target linkname.
-							exit 1
-						fi
-						if [ -e "$PREFIX/bin/$TARGET_BIN" ] || command -v "$1" &>/dev/null; then
-							error Executable/command $1 already exits. Use another name.
-							exit 1
-						fi
-						if [[ `dirname $0` != "$PREFIX/bin" ]]; then
-							error Command must be located in $PATH to create bin alias.
-						fi
-						ln -s "$0" "$PREFIX/bin/$TARGET_BIN" &>/dev/null || {
-							error Cannot create symlink $TARGET_BIN.
-							exit 5
-						}
-						success Link created. Try to run \"$TARGET_BIN\".
-						echo "$TARGET_BIN" >> "$CACHE_DIR/alias/bin.lst"
-						exit 0
-						;;
-					-u|--unbin)
-						shift
-						if [ $# -lt 1 ]; then
-							error Must specify link name to remove.
-							exit 1
-						fi
-						if [ $# -gt 1 ]; then
-							error Can remove one symlink at once.
-							exit 1
-						fi
-						if [ ! -f "$CACHE_DIR/alias/bin.lst" ]; then
-							error Linkname cache file does not exists.
-							exit 3
-						fi
-						
-						if ! grep -Fxq "$1" "$CACHE_DIR/alias/bin.lst"; then
-							error No such symlink $1.
-							exit 6
-						else
-							LINK_TARGET=`readlink -f "$PREFIX/bin/$1"`
-							if [[ "$LINK_TARGET" != "$0" ]] || [[ "$LINK_TARGET" != "$PREFIX/bin/$SCRIPT_COMMAND_O" ]]; then
-								error Script can remove only own symlinks.
-								exit 5
-							fi
-							esc=$(printf '%s\n' "$1" | sed 's/[][\/.^$*]/\\&/g')
-							if ! sed -i "/^$esc$/d" "$CACHE_DIR/alias/bin.lst"; then
-								error Cannot update linknames cache.
-								exit 5
-							fi
-						
-							if [ -f "$PREFIX/bin/$1" ]; then
-								if ! rm "$PREFIX/bin/$1"; then
-									error Cannot remove symlink $PREFIX/bin/$1.
-									exit 5
-								fi
-							fi
-						fi
-						success Symlink removed.
-						exit 0
-						;;
-					-*) error "Invalid parameter: $1"; info "Try to use -h|--help for more info."; exit 1 ;;
-					*) alias_run $* ;;
-				esac
 				;;
 			V|-V|--check)
 				shift
@@ -887,9 +468,11 @@ parse_args() {
 				;;
 			-h|--help)
 				show_help
+				exit 0
 				;;
 			-v|--version)
 				version_info
+				exit 0
 				;;
 			-i|--version-info)
 				about_info
@@ -901,19 +484,9 @@ parse_args() {
 				exit 0
 				;;
 			*)
-				if [ $# -eq 1 ]; then
-					if [ -f "$CACHE_DIR/alias/$1.alias" ]; then
-						alias_run $1
-					else
-						error "Invalid parameter: $1"
-						info "Try to use -h|--help for more info."
-						exit 1
-					fi
-				else
-					error "Invalid parameter: $1"
-					info "Try to use -h|--help for more info."
-					exit 1
-				fi
+				error "Invalid parameter: $1"
+				info "Try to use -h|--help for more info."
+				exit 1
 				;;
 		esac
 	done
@@ -934,35 +507,13 @@ req() {
 	done
 	if $MISSING; then
 		error "Some dependencies are missing."
-		exit 2
+		exit 1
 	fi
 }
 ensure_cache() {
-	# ENSURE PREVIOUS VERSION COMPATIBILITY
-	cache_error() {
-		error "Something went wrong while creating cache/config directories."
-		exit 3
-	}
-	local OLD_CACHE_DIR="$HOME/.cache/BuriXon-code"
-	local OLD_CACHE_FILE="$OLD_CACHE_DIR/"wifi_scan_cache.jsonl
-	local OLD_CACHE_LOCATION="$OLD_CACHE_DIR/"wifi_scan_last_loc.env
-	if [ ! -d "$CACHE_DIR" ]; then
-		if [ -f "$OLD_CACHE_FILE" ] && [ ! -f "$CACHE_FILE" ]; then
-			info "Copying old cache to the new file..."
-			mkdir -p "$CACHE_DIR" || cache_error
-			cp "$OLD_CACHE_FILE" "$CACHE_FILE" || cache_error
-		fi
-		if [ -f "$OLD_CACHE_LOCATION" ] && [ ! -f "$LOCATION_FILE" ]; then
-			info "Copying latest known location to the new file..."
-			mkdir -p "$CACHE_DIR" || cache_error
-			cp "$OLD_CACHE_LOCATION" "$LOCATION_FILE" || cache_error
-		fi
-	fi
-	mkdir -p "$CACHE_DIR/alias" || cache_error
-	touch "$CACHE_FILE" || cache_error
-	touch "$LOCATION_FILE" || cache_error
-	touch "$CACHE_DIR/alias/bin.lst" || cache_error
-	return 0
+	mkdir -p "$CACHE_DIR"
+	touch "$CACHE_FILE"
+	touch "$LOCATION_FILE"
 }
 
 # Restart API
@@ -970,21 +521,21 @@ api_restart() {
 	if $EXIT_ON_FAIL; then
 		info "The -e|--exit-on-fail option was enabled."
 		error "API failed. Aborting."
-		exit 4
+		exit 1
 	else
 		ERRORS=0
 		info "Restarting API..."
 		termux-api-stop >/dev/null 2>&1
 		STATUS=$?
 		ERRORS=$((ERRORS + STATUS))
-		sleep 0.5
+		sleep 1
 		termux-api-start >/dev/null 2>&1
 		STATUS=$?
 		ERRORS=$((ERRORS + STATUS))
-		sleep 0.5
+		sleep 1
 		if [ $STATUS -ne 0 ]; then
 			error "Restarting failed."
-			exit 4
+			exit 1
 		fi
 	fi
 }
@@ -993,7 +544,7 @@ api_restart() {
 get_location() {
 	local j lat lon alt
 
-	j=$(timeout "$GPS_TIMEOUT" termux-location -p "$PROVIDER" 2>/dev/null || true)
+	j=$(timeout 10 termux-location -p "$PROVIDER" 2>/dev/null || true)
 
 	lat=$(printf "%s" "$j" | jq -r 'try .latitude // empty')
 	lon=$(printf "%s" "$j" | jq -r 'try .longitude // empty')
@@ -1054,14 +605,12 @@ scan_once() {
 	IFS=';' read -r lat lon alt api <<<"$loc"
 
 	local raw
-	termux-wifi-enable true &>/dev/null || { error Error while turning on WiFi.; exit 4; }
 	raw=$(termux-wifi-scaninfo 2>/dev/null || true)
 	if [ -z "$raw" ]; then
 		error "Wi-Fi scan failed."
 		api_restart
 		raw=$(termux-wifi-scaninfo 2>/dev/null || true)
 	fi
-	echo FALSE/ERROR below means everything allright. &>/dev/null
 	[ -z "$raw" ] && return 1
 
 	while IFS= read -r -u 3 line; do
@@ -1162,7 +711,7 @@ search_cache() {
 	MATCHING_COUNT=0
 	if [ ! -f "$CACHE_FILE" ]; then
 		error "Cache file not found. Try to scan first."
-		exit 3
+		exit 1
 	fi
 	if [ -z "$SEARCH_PATTERN" ] || ! [[ "$SEARCH_PATTERN" =~ [^[:space:]] ]]; then
 		error "Search pattern is empty."
@@ -1185,7 +734,7 @@ search_cache() {
 	info "Search patterns: $pattern_line"
 	if ! grep -E "$regex" "$CACHE_FILE" >/dev/null 2>&1; then
 		error "No matches found."
-		exit 6
+		exit 1
 	fi
 	MATCHING_COUNT=`grep -E -c "$regex" "$CACHE_FILE"`
 	grep -E "$regex" "$CACHE_FILE" |
@@ -1193,7 +742,7 @@ search_cache() {
 		echo; info "Found:"
 		if ! json=`printf "%s" "$line" | jq . 2>/dev/null`; then
 			error "Failed to parse JSON."
-			exit 7
+			exit 1
 		fi
 		index=0
 		out="$json"
@@ -1202,7 +751,7 @@ search_cache() {
 			index=$((index+1))
 			if ! out=`printf "%s" "$out" | sed "s/${pattern}/$(printf '\033[38;5;%sm\033[1m%s\033[0m' "$color" "$pattern")/g"`; then
 				error "Failed during formatting."
-				exit 7
+				exit 1
 			fi
 		done
 		printf "%s\n" "$out"
@@ -1236,7 +785,7 @@ check_file_exists() {
 		if [ -f "${SAVE_FILE}.${SAVE_EXT}" ]; then
 				error "File ${SAVE_FILE}.${SAVE_EXT} already exists."
 				info "Select another filename or try to use -o option."
-				exit 5
+				exit 1
 		else
 			return 0
 		fi
@@ -1247,22 +796,22 @@ check_file_exists() {
 
 # Save json
 save_json_min() {
-	jq -cs '.' "$CACHE_FILE" | tr -d '\n' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 5; }
+	jq -cs '.' "$CACHE_FILE" | tr -d '\n' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
 # Save pretty json
 save_json_pretty() {
-	jq -cs '.' "$CACHE_FILE" | jq '.' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 5; }
+	jq -cs '.' "$CACHE_FILE" | jq '.' > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
 # Save jsonl
 save_json_list() {
 	{ [ -f "$CACHE_FILE" ] && [[ $( wc -l < "$CACHE_FILE" ) -gt 0 ]]; } && {
-		cp "$CACHE_FILE" "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 5; }
+		cp "$CACHE_FILE" "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
 		success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
-	} || { error "Cache empty: try to scan first."; exit 8; }
+	} || { error "Cache empty: try to scan first."; exit 1; }
 }
 
 # Save csv 
@@ -1270,7 +819,7 @@ save_csv() {
 	{
 		echo "time,ssid,bssid,rssi,frequency_mhz,capabilities,provider,latitude,longitude,altitude"
 		jq -r '. | [.time, (.ssid//"(hidden)"), .bssid, (.rssi//""), (.frequency_mhz//""), (.capabilities//""), .provider, (.latitude|tostring), (.longitude|tostring), (.altitude|tostring)] | @csv' "$CACHE_FILE"
-	} > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 5; }
+	} > "${SAVE_FILE}.${SAVE_EXT}" || { error "Error while saving file."; exit 1; }
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
@@ -1289,9 +838,8 @@ jitter_pair() {
 
 # Save kml
 save_kml() {
-	stty -echo
 	local tmp="$SAVE_FILE.tmp"
-	: > "$tmp"
+	: > "$tmp"	
 	{
 		echo '<?xml version="1.0" encoding="UTF-8"?>'
 		echo '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
@@ -1300,61 +848,35 @@ save_kml() {
 		echo '  <Style id="lock"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-blank.png</href></Icon></IconStyle></Style>'
 		echo '  <Style id="cache"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-blank.png</href></Icon></IconStyle></Style>'
 	} >> "$tmp"
-
 	CURRENT=0
 	TOTAL=$(wc -l < "$CACHE_FILE")
-
-	echo -en "\e[?7l"
-
+	PERCENT=$(( CURRENT*100/TOTAL ))
+	info "Progress data conversion... ${PERCENT}%"
+	echo -e "${YELLOW}[SSID]${RESET} Starting..."
 	jq -c '.' "$CACHE_FILE" 2>/dev/null | while IFS= read -r row; do
-		CURRENT=$((CURRENT + 1))
-
-		local ssid bssid caps time lat lon alt api
-		ssid=$(echo "$row" | jq -r '(.ssid//"(hidden)")')
-		bssid=$(echo "$row" | jq -r '.bssid')
-		caps=$(echo "$row" | jq -r '(.capabilities//"")')
-		time=$(echo "$row" | jq -r '.time')
-		lat=$(echo "$row" | jq -r '.latitude')
-		lon=$(echo "$row" | jq -r '.longitude')
-		alt=$(echo "$row" | jq -r '(.altitude//0)')
-		api=$(echo "$row" | jq -r 'if .api == false then "false" else "true" end')
-
-		cols=$(tput cols)
-		[ "$cols" -lt 1 ] && cols=1
-
-		if [ -z "$ssid" ] || [ "$ssid" = "(hidden)" ]; then
-			echo -e "\e[1A\r\e[K"
-			info "[SSID]:\e[K \e[2m(hidden)\e[0m"
-		else
-			echo -e "\e[1A\r\e[K"
-			info "[SSID]:\e[K ${ssid:0:$cols}"
-		fi
-
-		filled=$(( CURRENT * cols / TOTAL ))
-		[ "$filled" -gt "$cols" ] && filled="$cols"
-
-		for ((i=0;i<filled;i++)); do
-			p=$(( i * 100 / (cols-1) ))
-			if [ "$p" -le 50 ]; then
-				r=255; g=$((255*p/50))
-			else
-				r=$((255-255*(p-50)/50)); g=255
-			fi
-			echo -en "\e[48;2;${r};${g};0m \e[0m"
-			trap 'echo -en "\r\e[K"' SIGWINCH
-		done
-
-		echo -en "\e[1;46m \e[0m\e[J\e[1A"
-
+		CURRENT=$(( CURRENT+1 ))
+		PERCENT=$(( CURRENT*100/TOTAL ))
+		echo -en "\e[2A"
+		info "Progress data conversion... ${PERCENT}%\e[K"
+		local ssid bssid caps time lat lon alt
+		ssid=$(printf "%s" "$row" | jq -r '(.ssid//"(hidden)")')
+		bssid=$(printf "%s" "$row" | jq -r '.bssid')
+		caps=$(printf "%s" "$row" | jq -r '(.capabilities//"")')
+		time=$(printf "%s" "$row" | jq -r '.time')
+		lat=$(printf "%s" "$row" | jq -r '.latitude')
+		lon=$(printf "%s" "$row" | jq -r '.longitude')
+		alt=$(printf "%s" "$row" | jq -r '(.altitude//0)')
+		api=$(printf "%s" "$row" | jq -r 'if .api == false then "false" else "true" end')
+		echo -e "${YELLOW}[SSID]${RESET} ${ssid:-(hidden)}\e[K"
 		[ -z "$lat" ] || [ -z "$lon" ] && continue
-
+		local jl jg
 		IFS=';' read -r jl jg <<<"$(jitter_pair "$bssid")"
+		local jlat jlon
 		jlat=$(awk -v a="$lat" -v b="$jl" 'BEGIN{printf "%.8f", a+b}')
 		jlon=$(awk -v a="$lon" -v b="$jg" 'BEGIN{printf "%.8f", a+b}')
-
+		local style
 		if is_locked "$caps"; then style="#lock"; else style="#open"; fi
-		[ "$api" = "false" ] && style="#cache"
-
+		if [[ "$api" == "false" ]]; then style="#cache"; fi
 		{
 			echo "  <Placemark>"
 			echo "    <name><![CDATA[$ssid]]></name>"
@@ -1362,18 +884,12 @@ save_kml() {
 			echo "    <styleUrl>$style</styleUrl>"
 			echo "    <Point><coordinates>$jlon,$jlat,$alt</coordinates></Point>"
 			echo "  </Placemark>"
-		} >> "$tmp"
+		} >> "$tmp" || { error "Scan error."; exit 1; }
 	done
-
 	echo '</Document></kml>' >> "$tmp"
-	mv "$tmp" "${SAVE_FILE}.${SAVE_EXT}" || { error "Save failed"; exit 5; }
-
-	info Finishing...
-	cols=$(tput cols)
-	for ((i=1;i<=cols;i++)); do
-		echo -en "\e[46m \e[0m"
-		sleep 0.01
-	done
+	mv "$tmp" "${SAVE_FILE}.${SAVE_EXT}" || { error "Some error occured while saving file."; exit 1; }
+	echo -en "\e[1A"
+	echo -e "${YELLOW}[SSID]${RESET}\e[0m ---\e[K"
 	success "File saved: ${SAVE_FILE}.${SAVE_EXT}"
 }
 
@@ -1385,7 +901,7 @@ do_save() {
 		SAVE_FILE="$SEARCH_PATTERN"
 		SAVE_OVERRIDE=true
 	fi
-	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 8; }
+	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 1; }
 	case "$SAVE_FMT" in
 		json)
 			SAVE_EXT="json"
@@ -1423,7 +939,7 @@ do_save() {
 valid() {
 	local FILE SSID MIME TYPE LINES
 	FILE="$VALID_FILE"
-	[ ! -f "$FILE" ] && error "No file: $FILE" && exit 5
+	[ ! -f "$FILE" ] && error "No file: $FILE" && exit 1
 	
 	info "Checking: $FILE"
 	
@@ -1640,311 +1156,17 @@ valid() {
 	esac
 }
 
-menu_select() {
-	local __out="$1"
-	shift
-	local items=("$@")
-	local N=$#
-	[ "$N" -eq 0 ] && return
-	local choice=1
-	local cols
-	local line
-
-	cols=$(tput cols 2>/dev/null || stty size 2>/dev/null | awk '{print $2}')
-	[ -z "$cols" ] && cols=80
-
-	echo -ne "\e[?25l\e[?7l"
-
-	while :; do
-		for ((i=1;i<=N;i++)); do
-			line="  ${items[i-1]}"
-			if (( ${#line} > cols )); then
-				line="${line:0:cols}"
-			else
-				while (( ${#line} < cols )); do
-					line+=" "
-				done
-			fi
-
-			if (( i == choice )); then
-				if [[ "$line" == *"ABORT"* ]]; then
-					echo -e "\e[1;31m< \e[0m\e[1;3;7;31m${line}\e[0m"
-				else
-					echo -e "\e[1;33m> \e[0m\e[1;3;7;33m${line}\e[0m"
-				fi
-			else
-				echo -e "\e[2m| ${line}\e[0m"
-			fi
-		done
-
-		echo -ne "\e[${N}A"
-
-		read -rsn1 key
-		case "$key" in
-			$'\x1b')
-				read -rsn2 -t 0.1 rest 2>/dev/null || rest=''
-				if [[ "$rest" == "[A" ]]; then
-					((choice--))
-					((choice < 1)) && choice=$N
-				elif [[ "$rest" == "[B" ]]; then
-					((choice++))
-					((choice > N)) && choice=1
-				fi
-			;;
-			"")
-				break
-			;;
-			q)
-				break
-			;;
-		esac
-
-		echo -ne "\e[J"
-	done
-
-	echo -en "\e[1A\e[J\e[?7h"
-	printf -v "$__out" '%s' "${items[choice-1]}"
-}
-
-alias_mod() {
-	ensure_cache
-	local ALIASNAME ALIASFILE USER_EDITOR ALIASCONTENT MODE FOUND_ALIAS
-	FOUND_ALIAS=false
-	case $1 in
-		add)
-			shift
-			if [ $# -lt 1 ]; then error Must specify alias name.; exit 1; fi
-			if [ $# -lt 2 ]; then error Must specify at least 1 parameter.; exit 1; fi
-			if [[ "$1" =~ ^[a-zA-Z0-9_]*$ ]] && [[ ! "$1" =~ [RCSA] ]]; then
-				ALIASNAME="$1"
-				ALIASFILE="$CACHE_DIR/alias/$ALIASNAME.alias"
-				shift
-			else
-				error "Invalid/unallowable alias name $1."
-				error "Use only letters, numbers or dash \"_\"."
-				exit 1
-			fi
-			if [ ! -d "$CACHE_DIR/alias" ]; then
-				ensure_cache
-			fi
-			if [ -f "$ALIASFILE" ]; then 
-				error "Alias \"$ALIASNAME\" already exists. Use -e|--edit or -d|--delete instead."
-				exit 1
-			fi
-			if [[ "$*" =~ [#] ]]; then
-				error "Comments \"#\" are not allowed here."
-				exit 1
-			fi
-			info "Cretaing new alias:\n"
-			info "  Name: $ALIASNAME"
-			info "  Params: $*"
-			info "  Command: `basename $0` $*\n"
-			info "Use -d|--delete or -e|--edit to remove/edit alias.\n"
-			USER_EDITOR=`readlink -f $PREFIX/bin/editor`
-			USER_EDITOR=`basename $USER_EDITOR`
-			echo -e "############################################
-# Termux-WiFi-map (c) 2025 by BuriXon-code #
-# Dynamic alias for long commandline input #
-############################################
-# Here you can easily edit an existent alias.
-# Remember to set first parameter as a mode
-# (R|-R or C|-C or S|-S or V|-V etc.)!
-# This script uses default system \"editor\"
-# (for you: $USER_EDITOR).
-# You can change it by changing the
-# $PREFIX/bin/editor link to another editor
-# of your choice (e.g. micro, nano, vim).
-############################################
-# Alias parameters:
-#-------------------------------------------
-
-$*
-
-#-------------------------------------------
-# To finish, save the file ( \`:wq\` for vim,
-# \`Ctrl+S Ctrl+X\` for nano etc.)." > "$ALIASFILE" && {
-				success "Alias created. Use `basename $0` -A $ALIASNAME to run."
-				exit 0
-			} || {
-				error "Something went wrong. Make sure alias $ALIASNAME does not exit, and try again."
-				exit 9
-			}
-		;;
-		list)
-			shift
-			info "Listing all known aliases:"
-			shopt -s nullglob
-			for FILE in "$CACHE_DIR/alias"/*.alias; do
-				ALIASNAME="${FILE##*/}"
-				ALIASNAME="${ALIASNAME%.alias}"
-				ALIASCONTENT="`cat $FILE | sed '/^$/d' | grep -v '#'`"
-				IFS=" " read -r mode params <<< $ALIASCONTENT
-				case $mode in
-					R|-R|--run) MODE="RUN - scan mode" ;;
-					S|-S|--save) MODE="SAVE - export mode" ;;
-					C|-C|--cache) MODE="CACHE - data mode" ;;
-					V|-V|--valid) MODE="VALID - validation mode" ;;
-					*) MODE="$mode" ;;
-				esac
-				if (( $# == 0 )); then
-					echo
-					FOUND_ALIAS=true
-					info "Alias"
-					info "  Name: $ALIASNAME:"
-					info "  Mode: $MODE"
-					info "  Params: $params"
-					info "  Command: `basename $0` $ALIASCONTENT"
-				else
-					FOUND_ALIAS=false
-					for PATTERN in "$@"; do
-						if [[ "$ALIASNAME" == *"$PATTERN"* ]]; then
-							FOUND_ALIAS=true
-							echo
-							info "Alias"
-							info "  Name: $ALIASNAME:"
-							info "  Mode: $MODE"
-							info "  Params: $params"
-							info "  Command: `basename $0` $ALIASCONTENT"
-							break
-						fi
-					done
-				fi
-			done
-			$FOUND_ALIAS || error No matching alias found.
-			echo
-			info Executable links:
-			while IFS= read -r bin; do
-				info "  Exec: $PREFIX/bin/$bin"
-			done < "$CACHE_DIR/alias/bin.lst"
-			info To remove Exec links use -u --unbin option.
-			$FOUND_ALIAS || {
-				echo
-				exit 6
-			}
-		;;
-		edit)
-			shift
-			if [ $# -eq 0 ]; then
-				echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter name of alias to edit: \e[K"
-				IFS=" " read -r ALIASNAME GARBAGE
-				echo -e "\e[?25l"
-				if [ -n "$GARBAGE" ]; then
-					error "You can edit max 1 alias at once."
-					exit 1
-				fi
-				ALIASFILE="$CACHE_DIR/alias/$ALIASNAME.alias"
-				if [ -f "$ALIASFILE" ]; then
-					USER_EDITOR=`readlink -f $PREFIX/bin/editor`
-					USER_EDITOR=`basename $USER_EDITOR`
-					info "Editing alias $ALIASNAME in default text editor (for you: $USER_EDITOR)."
-					info "Press any key to continue or CTRL+C to abort...\n"
-					read -rsn1 any_key && editor "$ALIASFILE" && {
-						success "Alias $ALIASNAME saved."
-						exit 0
-					} || {
-						error "Some error occured while editing $ALIASNAME."
-						exit 9
-					}
-				else
-					error "No such alias $ALIASNAME."
-					error "Use -l|--list to list all available aliases."
-					exit 1
-				fi				
-			elif [ $# -eq 1 ]; then
-				ALIASNAME="$1"
-				ALIASFILE="$CACHE_DIR/alias/$ALIASNAME.alias"
-				USER_EDITOR=`readlink -f $PREFIX/bin/editor`
-				USER_EDITOR=`basename $USER_EDITOR`
-				info "Editing alias $ALIASNAME in default text editor (for you: $USER_EDITOR)."
-				info "Press any key to continue or CTRL+C to abort...\n"
-				read -rsn1 any_key && editor "$ALIASFILE" && {
-					success "Alias $ALIASNAME saved."
-					exit 0
-				} || {
-					error "Some error occured while editing $ALIASNAME."
-					exit 9
-				}
-			else
-				error "You can edit max 1 alias at once."
-				exit 1
-			fi
-		;;
-		delete)
-			shift
-			if [ $# -eq 0 ]; then
-				echo -en "\e[?25h\r\e[1;33m[INFO]\e[0m Enter name of alias to remove: \e[K"
-				IFS=" " read -r ALIASNAME GARBAGE
-				echo -e "\e[?25l"
-				if [ -n "$GARBAGE" ]; then
-					error "You can remove max 1 alias at once."
-					exit 1
-				fi
-				ALIASFILE="$CACHE_DIR/alias/$ALIASNAME.alias"
-				if [ -f "$ALIASFILE" ]; then
-					info "Removing alias $ALIASNAME."
-					info "Press any key to continue or CTRL+C to abort...\n"
-					read -rsn1 any_key
-					rm -r "$ALIASFILE" && {
-						success "Alias removed."
-						exit 0
-					} || {
-						error "Cannot remove alias $ALIASFILE"
-						exit 9
-					}
-				else
-					error "No such alias $ALIASNAME."
-					error "Use -l|--list to list all available aliases."
-					exit 1
-				fi				
-			elif [ $# -eq 1 ]; then
-				ALIASNAME="$1"
-				ALIASFILE="$CACHE_DIR/alias/$ALIASNAME.alias"
-				info "Removing alias $ALIASNAME."
-				info "Press any key to continue or CTRL+C to abort...\n"
-				read -rsn1 any_key
-				rm -r "$ALIASFILE" && {
-					success "Alias removed."
-					exit 0
-				} || {
-					error "Cannot remove alias $ALIASFILE"
-					exit 9
-				}			else
-				error "You can remove max 1 alias at once."
-				exit 1
-			fi
-		;;
-		*) error Invalid alias mode $1; exit 1 ;;
-	esac
-	exit 0
-}
-
-alias_run() {
-	ensure_cache
-	local ALIASNAME ALIASFILE ALIASPARAMS
-	FROM_ALIAS=false
-	ALIASNAME="$1"
-	ALIASFILE="$CACHE_DIR/alias/$ALIASNAME.alias"
-	ALIASPARAMS="`cat $ALIASFILE | sed '/^$/d' | grep -v '#'`"
-	info "Starting from alias $ALIASNAME..."
-	main $ALIASPARAMS
-	exit 0
-}
-
-# RUN
+# RUN :)
 main() {
-	echo
 	req
 	ensure_cache
 	parse_args "$@"
-	banner
-	echo -e "${ASCI_RETURN}"
 	if $DO_SAVE; then do_save; exit 0; fi
 	if $CACHE_LIST; then list_cache; exit 0; fi
 	if $DO_VALID; then valid; exit 0; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
 	if $CACHE_SEARCH; then search_cache; fi
-	info Starting...
 	while :; do
 		scan_once || error "Scan error."
 		$CONTINUOUS || break
@@ -1953,4 +1175,5 @@ main() {
 		fi
 	done
 }
+
 main "$@"
