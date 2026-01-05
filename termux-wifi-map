@@ -325,7 +325,9 @@ about_info() {
 	+ An option to interactively select the operating mode without the need to enter long CLI parameters;
 	+ An option to create dynamic aliases/shortcuts for options, allowing you to avoid typing long CLI parameters;
 	+ The ability to set a custom timeout for location retrieval from termux-api (useful when GPS signal is unstable);
-	+ Added debugging options (first parameter: \"D\").\n
+	+ Added debugging options (first parameter: \"D\").
+[2.3] - Fixed one minor bug:
+	+ Slight line shifting during interactive export to KML.\n
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
