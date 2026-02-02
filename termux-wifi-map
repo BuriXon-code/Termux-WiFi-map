@@ -17,7 +17,7 @@ set -eo pipefail
  ##############################################
 
  # Termux-WiFi-map v2.5
- # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
+ # Copyright (C) 2026  Kamil "BuriXon" Burek (https://burixon.dev)
  #
  # This program is free software: you can redistribute it and/or modify
  # it under the terms of the GNU General Public License as published by
