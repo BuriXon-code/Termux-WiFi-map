@@ -336,7 +336,7 @@ about_info() {
 	+ Additionally: Checking if the alias aliasname is readable.
 [2.5] - Added \'nobanner\' option:
 	+ An option has been added to disable the banner display on startup.
-[2.5] - Fix banner:
+[2.6] - Fix banner:
 	+ Removed the delay between banner animation frames. The banner now renders faster.\n
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
