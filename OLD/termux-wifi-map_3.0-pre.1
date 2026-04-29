@@ -1,21 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068
 
+# + merge
+# + rerurn codes
+# + update
+# + oui/vendor search
+
 # Debugging
 export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
 
 # Set shell
 set -eo pipefail
-
- ##############################################
- # Author: Kamil BuriXon Burek (BuriXon-code) #
- # Name: Termux-WiFi-map (c) 2026             #
- # Description: Scan and save APs locations   #
- # License: GPLv3.0                           #
- # Version: v 3.0                             #
- # Todo: For now, it's a pre-release version, #
- #       without importatnt functions         #
- ##############################################
 
  # Termux-WiFi-map v3.0
  # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
@@ -1527,6 +1522,19 @@ check_update() {
 		error "`basename $0`: Permission denied: `which curl`"
 		exit 2
 	fi
+	exit 0
+}
+
+# Vendor download TODO
+oui_list_fetch() {
+	curl -s https://standards-oui.ieee.org/oui/oui.txt \
+	| grep '(hex)' \
+	| sed -E 's/^([0-9A-Fa-f-]+)[[:space:]]+\(hex\)[[:space:]]+/\1|/; s/-/:/g; s/,//g; s/\b(Co|Ltd|Inc|Corporation|Corp|SAS|GmbH|LLC|Ltd\.|Inc\.)\b//gi; s/\.{1,2}//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//; s/\|/,/'
+}
+
+# Vendor search TODO
+search_vendor() {
+	placeholder
 	exit 0
 }
 
