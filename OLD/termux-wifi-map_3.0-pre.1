@@ -12,7 +12,7 @@ set -eo pipefail
  # Name: Termux-WiFi-map (c) 2026             #
  # Description: Scan and save APs locations   #
  # License: GPLv3.0                           #
- # Version: v 2.6                             #
+ # Version: v 3.0                             #
  # Todo: For now, it's a pre-release version, #
  #       without importatnt functions         #
  ##############################################
@@ -75,8 +75,12 @@ CACHE_LIST=false
 CACHE_PURGE=false
 CACHE_COUNT=false
 JSON_LIST=false
+
 CACHE_SEARCH=false
 SEARCH_PATTERN=""
+
+OUI_SEARCH=false
+SEARCH_VENDOR=""
 
 DO_VALID=false
 VALID_FILE=""
@@ -645,6 +649,7 @@ parse_args() {
 						SEARCH_PATTERN="$PATTERNS"
 						search_cache
 					;;
+					#TODO VENDOR
 					Purge*) success "Selected: ${CACHE_OP}..."; purge_cache ;;
 					ABORT) info Aborting.; exit 0 ;;
 					*) error Invalid option $CACHE_OP. How did you do that?; exit 1 ;;
@@ -778,6 +783,11 @@ parse_args() {
 						-s|--search)
 							CACHE_SEARCH=true
 							SEARCH_PATTERN="$2"
+							shift 2
+							;;
+						-v|--vendor)
+							OUI_SEARCH=true
+							SEARCH_VENDOR="$2"
 							shift 2
 							;;
 						*)
@@ -2163,6 +2173,7 @@ main() {
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
 	if $CACHE_SEARCH; then search_cache; fi
+	if $OUI_SEARCH; then placeholder; exit 0; fi
 	info Starting...
 	while :; do
 		scan_once || error "Scan error."
