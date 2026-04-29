@@ -1,22 +1,18 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068
 
+# + merge
+# + rerurn codes
+# + update
+# + oui/vendor search
+
 # Debugging
 export PS4='$(if [[ $? -eq 0 ]]; then echo -e "\e[0;32m TRUE/DONE\n\n\e[0m"; else echo -e "\e[1;5;31m FALSE/ERROR\n\n\e[0m"; fi) '
 
 # Set shell
 set -eo pipefail
 
- ##############################################
- # Author: Kamil BuriXon Burek (BuriXon-code) #
- # Name: Termux-WiFi-map (c) 2026             #
- # Description: Scan and save APs locations   #
- # License: GPLv3.0                           #
- # Version: v 2.7                             #
- # Todo: - - -                                #
- ##############################################
-
- # Termux-WiFi-map v2.6
+ # Termux-WiFi-map v3.0
  # Copyright (C) 2025  Kamil "BuriXon" Burek (https://burixon.dev)
  #
  # This program is free software: you can redistribute it and/or modify
@@ -38,7 +34,7 @@ SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="2.7"
+SCRIPT_VERSION="3.0-pre.1"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_DONATE="https://burixon.dev/donate/"
@@ -49,6 +45,7 @@ ASCI_RETURN="\e[0m"
 CACHE_DIR="$HOME/.cache/BuriXon-code/Termux-WiFi-map"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 LOCATION_FILE="$CACHE_DIR/wifi_scan_last_loc.env"
+OUI_FILE="$CACHE_DIR/oui.lst"
 
 PROVIDER="network"
 DELAY=10
@@ -74,11 +71,22 @@ CACHE_LIST=false
 CACHE_PURGE=false
 CACHE_COUNT=false
 JSON_LIST=false
+
 CACHE_SEARCH=false
 SEARCH_PATTERN=""
 
-DO_VALID="false"
+OUI_SEARCH=false
+SEARCH_VENDOR=""
+
+DO_VALID=false
 VALID_FILE=""
+
+DO_MERGE=false
+MERGE_1=""
+MERGE_2=""
+
+CHECK_UPDATE=false
+FOUND_VERSION=""
 
 GREEN="\e[38;5;120m"
 RED="\e[38;5;203m"
@@ -95,8 +103,12 @@ success() {
 info() {
 	echo -e "\r\e[1;33m[INFO]\e[0m $*\e[K"
 }
+placeholder() {
+	info "Not implemented yet..."
+}
 show_help() {
 	version_info
+	#TODO
 	echo -e "
 \e[1;36m[Usage]\e[0m $SCRIPT_COMMAND [D] [mode] [options]
 
@@ -105,11 +117,14 @@ show_help() {
   S|-S|--save		Save collected data to the chosen format (JSON, CSV, KML etc.).
   C|-C|--cache		Manage data in cache (list of known networks).
   V|-V|--check		Check the correctness of the given file structure.
+  M|-M|--merge		Merge two KML files into one.
   A|-A|--alias		Manage fast-access command aliases.
   D|-D|--debug		Enable debugging info (outputs).
   N|-N|--nobanner	Disable banner display on startup.
   -v|--version		Display short info about the script version and exit.
   -i|--version-info	Displays detailed info about the script and exit.
+  --report		Open bug-report page.
+  --update		Check for script version updates.
   -h|--help		Displays information about options and script usage and exit.
   [alias name]		Run the selected alias (if exists).\n
 \e[1;36m[Options]\e[0m
@@ -144,6 +159,8 @@ show_help() {
   [name]			Run the selected alias.\n
   \e[36m[CHECK]\e[0m
   /path/to/file			Path to the file to check\n
+  \e[36m[MERGE]\e[0m
+  file1.kml file2.kml	 	Paths to (2) files to merge\n
 \e[1;36m[Examples]\e[0m
   Scan once:
   $SCRIPT_COMMAND -R\n
@@ -159,13 +176,15 @@ show_help() {
   $SCRIPT_COMMAND -C -s \"WiFi,AP\"\n
   Check file.json integrity:
   $SCRIPT_COMMAND V file.json\n
+  Merge 'map1.kml' with 'map2.kml':
+  $SCRIPT_COMMAND M map1.kml map2.kml\n
   Create new loop-scan alias \"run\":
   $SCRIPT_COMMAND A -a run R -c -d 5 -t 5 -q\n
   Run created \"run\" alias:
   $SCRIPT_COMMAND run
   $SCRIPT_COMMAND A run\n
   Show informations about script:
-  $SCRIPT_COMMAND --version_info\n
+  $SCRIPT_COMMAND --version-info\n
 \e[1;36m[File formats]\e[0m
   JSON		Classic single-line (compact) JSON
   PJSON		Pretty formatted JSON
@@ -299,13 +318,18 @@ version_info() {
 	info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
 }
 about_info() {
+	#TODO
 	version_info
 	echo -e "
 \e[1;36m[About]\e[0m The script \e[1m$SCRIPT_COMMAND_O\e[0m, which is the main executable component of the Termux-WiFi-map project, is a tool that allows you to build a database of WiFi networks in your surroundings directly in Termux.\n
 \e[1;36m[Options]\e[0m Among the available options, you can find:
 	+ scanning with various options
 	+ saving collected data to JSON, CSV, KML files
-	+ validating files created by the script\n
+	+ combining multiple KML files into one
+	+ validating files created by the script
+	+ automatic updates 
+	+ clear return codes
+
 \e[1;36m[Changelog]\e[0m:
 [1.0] - Initial Release
 	This is the very first official release of Termux-WiFi-map. 
@@ -341,7 +365,14 @@ about_info() {
 [2.6.1] - Fix URL open:
 	+ Minor change for opening project page.
 [2.7] - Fix KML exporting:
-	+ Fixed a user-noted bug where ANSI cleanup sequences were being written to the file during resize during export. A file descriptor change was necessary.\n
+	+ Fixed a user-noted bug where ANSI cleanup sequences were being written to the file during resize during export. A file descriptor change was necessary.
+[3.0] - A huge dose of improvements [not released yet]:
+	+ New option to merge KML files;
+	+ New script auto-update option;
+	+ New unified return codes:
+		++ sorted 10..50 by category/type;
+		++ precise, punctual;
+
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
@@ -614,6 +645,7 @@ parse_args() {
 						SEARCH_PATTERN="$PATTERNS"
 						search_cache
 					;;
+					#TODO VENDOR
 					Purge*) success "Selected: ${CACHE_OP}..."; purge_cache ;;
 					ABORT) info Aborting.; exit 0 ;;
 					*) error Invalid option $CACHE_OP. How did you do that?; exit 1 ;;
@@ -747,6 +779,11 @@ parse_args() {
 						-s|--search)
 							CACHE_SEARCH=true
 							SEARCH_PATTERN="$2"
+							shift 2
+							;;
+						-v|--vendor)
+							OUI_SEARCH=true
+							SEARCH_VENDOR="$2"
 							shift 2
 							;;
 						*)
@@ -911,6 +948,31 @@ parse_args() {
 					esac
 				done
 				;;
+			M|-M|--merge)
+				shift
+				if [ $# -gt 2 ]; then
+					error "Too many parameters."
+					info "Try to use -h|--help for more info."
+					exit 1
+				elif [ $# -lt 2 ]; then
+					error "The required parameter is missing."
+					info "Try to use -h|--help for more info."
+					exit 1
+				fi
+				for arg in "$@"; do
+					case "$arg" in
+						-*)
+							error "Invalid parameter: $1"
+							info "Try to use -h|--help for more info."
+							exit 1
+							;;
+					esac
+				done
+				MERGE_1="$1"
+				MERGE_2="$2"
+				shift 2
+				DO_MERGE=true
+				;;
 			-h|--help)
 				show_help
 				;;
@@ -926,6 +988,10 @@ parse_args() {
 				open_page $SCRIPT_REPORT
 				success "Done."
 				exit 0
+				;;
+			--update)
+				shift
+				CHECK_UPDATE=true
 				;;
 			*)
 				if [ $# -eq 1 ]; then
@@ -1323,10 +1389,10 @@ save_kml() {
 	{
 		echo '<?xml version="1.0" encoding="UTF-8"?>' >&3
 		echo '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>' >&3
-		echo "  <name>$SAVE_KML_NAME</name>" >&3
-		echo '  <Style id="open"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-blank.png</href></Icon></IconStyle></Style>' >&3
-		echo '  <Style id="lock"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-blank.png</href></Icon></IconStyle></Style>' >&3
-		echo '  <Style id="cache"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-blank.png</href></Icon></IconStyle></Style>' >&3
+		echo "	<name>$SAVE_KML_NAME</name>" >&3
+		echo '	<Style id="open"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-blank.png</href></Icon></IconStyle></Style>' >&3
+		echo '	<Style id="lock"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/red-blank.png</href></Icon></IconStyle></Style>' >&3
+		echo '	<Style id="cache"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-blank.png</href></Icon></IconStyle></Style>' >&3
 	}
 	CURRENT=0
 	TOTAL=$(wc -l < "$CACHE_FILE")
@@ -1383,12 +1449,12 @@ save_kml() {
 		[ "$api" = "false" ] && style="#cache"
 
 		{
-			echo "  <Placemark>"
-			echo "    <name><![CDATA[$ssid]]></name>"
-			echo "    <description><![CDATA[$bssid | $caps | $time]]></description>"
-			echo "    <styleUrl>$style</styleUrl>"
-			echo "    <Point><coordinates>$jlon,$jlat,$alt</coordinates></Point>"
-			echo "  </Placemark>"
+			echo "	<Placemark>"
+			echo "		<name><![CDATA[$ssid]]></name>"
+			echo "		<description><![CDATA[$bssid | $caps | $time]]></description>"
+			echo "		<styleUrl>$style</styleUrl>"
+			echo "		<Point><coordinates>$jlon,$jlat,$alt</coordinates></Point>"
+			echo "	</Placemark>"
 		} >&3
 	done
 
@@ -1445,6 +1511,157 @@ do_save() {
 			exit 1
 			;;
 	esac
+}
+
+# Update TODO
+check_update() {
+	if ! command -v curl &>/dev/null; then
+		error "Dependent command 'curl' not found."
+		exit 2
+	fi
+	if [ ! -x `which curl` ]; then
+		error "`basename $0`: Permission denied: `which curl`"
+		exit 2
+	fi
+	exit 0
+}
+
+# Vendor download TODO
+ensure_oui_list() {
+	if [ -f "OUI_FILE" ] && [ -s "$OUI_FILE" ]; then
+		return 0
+	fi
+	curl -s https://standards-oui.ieee.org/oui/oui.txt \
+	| grep '(hex)' \
+	| sed -E 's/^([0-9A-Fa-f-]+)[[:space:]]+\(hex\)[[:space:]]+/\1|/; s/-/:/g; s/,//g; s/\b(Co|Ltd|Inc|Corporation|Corp|SAS|GmbH|LLC|Ltd\.|Inc\.)\b//gi; s/\.{1,2}//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//; s/\|/,/' > "$OUI_FILE".tmp
+	
+	for code in "${PIPESTATUS[@]}"; do
+		if [ "$code" -ne 0 ]; then
+			error "Somwthing went wrong..."
+			exit 9
+		fi
+	done
+	if [ -f "OUI_FILE".tmp ] && [ -s "$OUI_FILE".tmp ]; then
+		mv "$OUI_FILE".tmp "$OUI_FILE"
+		return 0
+	fi
+}
+
+# Vendor search TODO
+search_vendor() {
+	placeholder
+	exit 0
+}
+
+# Merge KMLs TODO
+merge_kml() {
+	[ "$#" -ne 3 ] && {
+		error "Something went wrong while passing parameters to the function."
+		exit 9
+	}
+
+	if ! command -v python &>/dev/null; then
+		error "Dependent command 'python' not found."
+		exit 2
+	fi
+	if [ ! -x `which python` ]; then
+		error "`basename $0`: Permission denied: `which python`"
+		exit 2
+	fi
+	
+	for f in "$1" "$2"; do
+		[ -r "$f" ] || {
+			printf 'Brak dostępu: %s\n' "$f" >&2
+			exit 1
+		}
+	done
+	
+	python3 - "$1" "$2" "$3" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+in1, in2, out = sys.argv[1:]
+
+NS = 'http://www.opengis.net/kml/2.2'
+ET.register_namespace('', NS)
+
+def q(tag):
+	return f'{{{NS}}}{tag}'
+
+def local(tag):
+	return tag.rsplit('}', 1)[-1] if tag.startswith('{') else tag
+
+def parse(path):
+	try:
+		tree = ET.parse(path)
+	except ET.ParseError as e:
+		raise SystemExit(f'{path}: błąd XML: {e}')
+
+	root = tree.getroot()
+	if local(root.tag) != 'kml':
+		raise SystemExit(f'{path}: to nie jest KML')
+
+	doc = root.find(q('Document'))
+	if doc is None:
+		raise SystemExit(f'{path}: brak Document')
+
+	placemarks = doc.findall(q('Placemark'))
+	if not placemarks:
+		raise SystemExit(f'{path}: brak Placemark')
+
+	sig = [local(c.tag) for c in placemarks[0]]
+	for idx, pm in enumerate(placemarks[1:], 2):
+		cur = [local(c.tag) for c in pm]
+		if cur != sig:
+			raise SystemExit(f'{path}: Placemark #{idx} ma inny układ niż pierwszy')
+
+	return tree, root, doc, placemarks, sig
+
+def style_ids(doc):
+	return {el.get('id') for el in doc.findall(q('Style')) if el.get('id')}
+
+def key(pm):
+	desc = (pm.findtext(q('description')) or '').strip()
+	name = (pm.findtext(q('name')) or '').strip()
+	bssid = desc.split('|', 1)[0].strip()
+	if bssid:
+		return ('bssid', bssid)
+	coords = pm.findtext(f'.//{q("coordinates")}') or ''
+	return ('fallback', name, desc, coords.strip())
+
+t1, r1, d1, p1, sig1 = parse(in1)
+t2, r2, d2, p2, sig2 = parse(in2)
+
+if sig1 != sig2:
+	raise SystemExit('Pliki mają inny format danych w Placemark')
+
+s1 = style_ids(d1)
+s2 = style_ids(d2)
+if s1 != s2:
+	raise SystemExit(f'Pliki mają inne Style: {sorted(s1)} != {sorted(s2)}')
+
+seen = set()
+merged = []
+
+for pm in p1 + p2:
+	k = key(pm)
+	if k in seen:
+		continue
+	seen.add(k)
+	merged.append(pm)
+
+for pm in list(d1.findall(q('Placemark'))):
+	d1.remove(pm)
+
+for pm in merged:
+	d1.append(pm)
+
+if hasattr(ET, 'indent'):
+	ET.indent(r1, space='  ')
+
+ET.ElementTree(r1).write(out, encoding='utf-8', xml_declaration=True)
+print(f'OK: {out} | placemarków: {len(merged)}')
+PY
 }
 
 # Check
@@ -1974,9 +2191,12 @@ main() {
 	if $DO_SAVE; then do_save; exit 0; fi
 	if $CACHE_LIST; then list_cache; exit 0; fi
 	if $DO_VALID; then valid; exit 0; fi
+	if $DO_MERGE; then placeholder; exit 0; fi
+	if $CHECK_UPDATE; then placeholder; exit 0; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
 	if $CACHE_SEARCH; then search_cache; fi
+	if $OUI_SEARCH; then placeholder; exit 0; fi
 	info Starting...
 	while :; do
 		scan_once || error "Scan error."
