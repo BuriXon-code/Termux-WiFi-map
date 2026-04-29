@@ -45,6 +45,7 @@ ASCI_RETURN="\e[0m"
 CACHE_DIR="$HOME/.cache/BuriXon-code/Termux-WiFi-map"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 LOCATION_FILE="$CACHE_DIR/wifi_scan_last_loc.env"
+OUI_FILE="$CACHE_DIR/oui.lst"
 
 PROVIDER="network"
 DELAY=10
@@ -1526,10 +1527,24 @@ check_update() {
 }
 
 # Vendor download TODO
-oui_list_fetch() {
+ensure_oui_list() {
+	if [ -f "OUI_FILE" ] && [ -s "$OUI_FILE" ]; then
+		return 0
+	fi
 	curl -s https://standards-oui.ieee.org/oui/oui.txt \
 	| grep '(hex)' \
-	| sed -E 's/^([0-9A-Fa-f-]+)[[:space:]]+\(hex\)[[:space:]]+/\1|/; s/-/:/g; s/,//g; s/\b(Co|Ltd|Inc|Corporation|Corp|SAS|GmbH|LLC|Ltd\.|Inc\.)\b//gi; s/\.{1,2}//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//; s/\|/,/'
+	| sed -E 's/^([0-9A-Fa-f-]+)[[:space:]]+\(hex\)[[:space:]]+/\1|/; s/-/:/g; s/,//g; s/\b(Co|Ltd|Inc|Corporation|Corp|SAS|GmbH|LLC|Ltd\.|Inc\.)\b//gi; s/\.{1,2}//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//; s/\|/,/' > "$OUI_FILE".tmp
+	
+	for code in "${PIPESTATUS[@]}"; do
+		if [ "$code" -ne 0 ]; then
+			error "Somwthing went wrong..."
+			exit 9
+		fi
+	done
+	if [ -f "OUI_FILE".tmp ] && [ -s "$OUI_FILE".tmp ]; then
+		mv "$OUI_FILE".tmp "$OUI_FILE"
+		return 0
+	fi
 }
 
 # Vendor search TODO
