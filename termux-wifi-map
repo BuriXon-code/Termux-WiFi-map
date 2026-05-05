@@ -1,9 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068
 
-# + merge
 # + rerurn codes
-# + update
 # + oui/vendor search
 
 # Debugging
@@ -29,24 +27,29 @@ set -eo pipefail
  # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 # Variables
+#META
 SCRIPT_NAME="Termux-WiFi-map"
 SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="3.0-pre.1"
+SCRIPT_VERSION="3.0-pre.2"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
+SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
 SCRIPT_DONATE="https://burixon.dev/donate/"
 SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
+SCRIPT_AV_VERSION="$(curl -s $SCRIPT_RAW_REPO | grep -oP '(?<=SCRIPT_VERSION=")[^"]+')"
 SHOW_BANNER=true
 ASCI_RETURN="\e[0m"
 
+#CACHE
 CACHE_DIR="$HOME/.cache/BuriXon-code/Termux-WiFi-map"
 CACHE_FILE="$CACHE_DIR/wifi_scan_cache.jsonl"
 LOCATION_FILE="$CACHE_DIR/wifi_scan_last_loc.env"
 OUI_FILE="$CACHE_DIR/oui.lst"
 
+#RUN
 PROVIDER="network"
 DELAY=10
 ZERO_DELAY=false
@@ -60,6 +63,7 @@ H_ENGINE="TERMUX"
 H_ENGINE_SET=false
 FROM_ALIAS=false
 
+#SAVE
 SAVE_OVERRIDE=false
 DO_SAVE=false
 SAVE_FILE=""
@@ -67,27 +71,25 @@ SAVE_FMT=""
 SAVE_EXT=""
 SAVE_KML_NAME="$SCRIPT_NAME v$SCRIPT_VERSION (c) by $SCRIPT_AUTHOR_ALIAS"
 
+#DB
 CACHE_LIST=false
 CACHE_PURGE=false
 CACHE_COUNT=false
 JSON_LIST=false
-
 CACHE_SEARCH=false
 SEARCH_PATTERN=""
-
 OUI_SEARCH=false
 SEARCH_VENDOR=""
 
+#FILE OPERATIONS
 DO_VALID=false
 VALID_FILE=""
-
 DO_MERGE=false
 MERGE_1=""
 MERGE_2=""
+OUTPUT_MERGE=""
 
-CHECK_UPDATE=false
-FOUND_VERSION=""
-
+#COLORS
 GREEN="\e[38;5;120m"
 RED="\e[38;5;203m"
 YELLOW="\e[38;5;229m"
@@ -105,6 +107,14 @@ info() {
 }
 placeholder() {
 	info "Not implemented yet..."
+}
+version_lt() {
+    [ "$1" != "$2" ] || return 1
+
+    local smallest
+    smallest=$(printf "%s\n%s\n" "$1" "$2" | sort -V | head -n1)
+
+    [ "$smallest" = "$1" ]
 }
 show_help() {
 	version_info
@@ -124,7 +134,6 @@ show_help() {
   -v|--version		Display short info about the script version and exit.
   -i|--version-info	Displays detailed info about the script and exit.
   --report		Open bug-report page.
-  --update		Check for script version updates.
   -h|--help		Displays information about options and script usage and exit.
   [alias name]		Run the selected alias (if exists).\n
 \e[1;36m[Options]\e[0m
@@ -192,15 +201,7 @@ show_help() {
   CSV		Comma-separated values
   KML		Format for representing points on maps\n
 \e[1;36m[Return codes]\e[0m
-  Code 1 - invalid input/option/value - the provided parameter or parameter value is invalid;
-  Code 2 - dependency error - required dependencies are missing;
-  Code 3 - cache error - error while creating the cache/database directory or cache empty/unreadable;
-  Code 4 - termux-api error - Termux API error, error retrieving location, scanning networks, enabling Wi-Fi, or restarting the API;
-  Code 5 - input/outout file error - file read or write error, error exporting data.
-  Code 6 - invalid input pattern - no results match the selected pattern;
-  Code 7 - processing error - error while pricessing raw data;
-  Code 8 - empty cache - attempted operation on non-existent data;
-  Code 9 - problem with alias file - something went wrong with the alias configuration file;
+  not re-standardized yet...
 "
 	exit 0
 }
@@ -316,6 +317,16 @@ version_info() {
 	banner
 	echo -e "${ASCI_RETURN}"
 	info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
+	if [ -t 1 ] \
+	   && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION" \
+	   && command -v curl &>/dev/null; then
+	
+	    if curl --max-time 5 -sSf "$SCRIPT_PAGE" >/dev/null 2>&1; then
+	        echo -e "
+\e[1;5;32m[UPDATE]\e[0m New version of the script available!
+Check the details: $SCRIPT_PAGE" >&2
+	    fi
+	fi
 }
 about_info() {
 	#TODO
@@ -327,7 +338,6 @@ about_info() {
 	+ saving collected data to JSON, CSV, KML files
 	+ combining multiple KML files into one
 	+ validating files created by the script
-	+ automatic updates 
 	+ clear return codes
 
 \e[1;36m[Changelog]\e[0m:
@@ -368,11 +378,28 @@ about_info() {
 	+ Fixed a user-noted bug where ANSI cleanup sequences were being written to the file during resize during export. A file descriptor change was necessary.
 [3.0] - A huge dose of improvements [not released yet]:
 	+ New option to merge KML files;
-	+ New script auto-update option;
 	+ New unified return codes:
 		++ sorted 10..50 by category/type;
-		++ precise, punctual;
+		++ precise, punctual;"
 
+echo -e "
+\e[1;36m[Version]\e[0m
+Current version: $SCRIPT_VERSION
+Available version: $SCRIPT_AV_VERSION"
+
+if [ -t 1 ] \
+   && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION" \
+   && command -v curl &>/dev/null; then
+
+    if curl --max-time 5 -sSf "$SCRIPT_PAGE" >/dev/null 2>&1; then
+        echo -e "
+\e[1;5;32m[UPDATE]\e[0m New version of the script available!
+Check the details: $SCRIPT_PAGE" >&2
+        sleep 0.5
+    fi
+fi
+
+echo -e "
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
@@ -989,10 +1016,6 @@ parse_args() {
 				success "Done."
 				exit 0
 				;;
-			--update)
-				shift
-				CHECK_UPDATE=true
-				;;
 			*)
 				if [ $# -eq 1 ]; then
 					if [ -f "$CACHE_DIR/alias/$1.alias" ]; then
@@ -1513,24 +1536,12 @@ do_save() {
 	esac
 }
 
-# Update TODO
-check_update() {
-	if ! command -v curl &>/dev/null; then
-		error "Dependent command 'curl' not found."
-		exit 2
-	fi
-	if [ ! -x `which curl` ]; then
-		error "`basename $0`: Permission denied: `which curl`"
-		exit 2
-	fi
-	exit 0
-}
-
 # Vendor download TODO
 ensure_oui_list() {
 	if [ -f "OUI_FILE" ] && [ -s "$OUI_FILE" ]; then
 		return 0
 	fi
+	info "OUI list not found. Downloading..."
 	curl -s https://standards-oui.ieee.org/oui/oui.txt \
 	| grep '(hex)' \
 	| sed -E 's/^([0-9A-Fa-f-]+)[[:space:]]+\(hex\)[[:space:]]+/\1|/; s/-/:/g; s/,//g; s/\b(Co|Ltd|Inc|Corporation|Corp|SAS|GmbH|LLC|Ltd\.|Inc\.)\b//gi; s/\.{1,2}//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//; s/\|/,/' > "$OUI_FILE".tmp
@@ -1555,28 +1566,52 @@ search_vendor() {
 
 # Merge KMLs TODO
 merge_kml() {
-	[ "$#" -ne 3 ] && {
-		error "Something went wrong while passing parameters to the function."
+	if ! $DO_MERGE; then
+		error "Something went wrong..."
 		exit 9
-	}
+	fi
 
-	if ! command -v python &>/dev/null; then
+	if [ -z "$MERGE_1" ] || [ -z "$MERGE_2" ]; then
+		error "Something went wrong..."
+		exit 9
+	fi
+	
+	if ! command -v python3 &>/dev/null; then
 		error "Dependent command 'python' not found."
 		exit 2
 	fi
-	if [ ! -x `which python` ]; then
-		error "`basename $0`: Permission denied: `which python`"
+	if [ ! -x `which python3` ]; then
+		error "`basename $0`: Permission denied: `which python3`"
 		exit 2
 	fi
 	
-	for f in "$1" "$2"; do
+	for f in "$MERGE_1" "$MERGE_2"; do
 		[ -r "$f" ] || {
-			printf 'Brak dostępu: %s\n' "$f" >&2
+			error "`basename $0`: Permission denied: $f"
 			exit 1
 		}
 	done
+
+	for f in "$MERGE_1" "$MERGE_2"; do
+		info "Checking file: $f"
+		VALID_FILE="$f"
+		valid >/dev/null || {
+			error "File $f is invalid..."
+			exit 9
+		}
+	done
+
+	base1="$(basename "$MERGE_1")"
+	base2="$(basename "$MERGE_2")"
+	name1="${base1%.*}"
+	name2="${base2%.*}"
+	OUTPUT_MERGE="${name1}_${name2}.kml"
+
+	if [[ -e "$OUTPUT_MERGE" ]]; then
+	    OUTPUT_MERGE="${name1}_${name2}-$(date +%s).kml"
+	fi
 	
-	python3 - "$1" "$2" "$3" <<'PY'
+	python3 - "$MERGE_1" "$MERGE_2" "$OUTPUT_MERGE" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 
@@ -1586,82 +1621,100 @@ NS = 'http://www.opengis.net/kml/2.2'
 ET.register_namespace('', NS)
 
 def q(tag):
-	return f'{{{NS}}}{tag}'
+    return f'{{{NS}}}{tag}'
 
 def local(tag):
-	return tag.rsplit('}', 1)[-1] if tag.startswith('{') else tag
+    return tag.rsplit('}', 1)[-1] if tag.startswith('{') else tag
+
+def info(*parts):
+    sys.stdout.write(f"\r\033[1;33m[INFO]\033[0m {' '.join(str(p) for p in parts)}\033[K\n")
+
+def err(*parts):
+    sys.stderr.write(f"\r\033[1;31m[ERR!]\033[0m {' '.join(str(p) for p in parts)}\033[K\n")
+
+def fail(*parts):
+    err(*parts)
+    raise SystemExit(1)
 
 def parse(path):
-	try:
-		tree = ET.parse(path)
-	except ET.ParseError as e:
-		raise SystemExit(f'{path}: błąd XML: {e}')
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError as e:
+        fail(f'{path}: XML error: {e}')
 
-	root = tree.getroot()
-	if local(root.tag) != 'kml':
-		raise SystemExit(f'{path}: to nie jest KML')
+    root = tree.getroot()
+    if local(root.tag) != 'kml':
+        fail(f'{path}: not a KML file')
 
-	doc = root.find(q('Document'))
-	if doc is None:
-		raise SystemExit(f'{path}: brak Document')
+    doc = root.find(q('Document'))
+    if doc is None:
+        fail(f'{path}: missing Document')
 
-	placemarks = doc.findall(q('Placemark'))
-	if not placemarks:
-		raise SystemExit(f'{path}: brak Placemark')
+    placemarks = doc.findall(q('Placemark'))
+    if not placemarks:
+        fail(f'{path}: no Placemark elements found')
 
-	sig = [local(c.tag) for c in placemarks[0]]
-	for idx, pm in enumerate(placemarks[1:], 2):
-		cur = [local(c.tag) for c in pm]
-		if cur != sig:
-			raise SystemExit(f'{path}: Placemark #{idx} ma inny układ niż pierwszy')
+    sig = [local(c.tag) for c in placemarks[0]]
+    for idx, pm in enumerate(placemarks[1:], 2):
+        cur = [local(c.tag) for c in pm]
+        if cur != sig:
+            fail(f'{path}: Placemark #{idx} has a different structure than the first one')
 
-	return tree, root, doc, placemarks, sig
+    return tree, root, doc, placemarks, sig
 
 def style_ids(doc):
-	return {el.get('id') for el in doc.findall(q('Style')) if el.get('id')}
+    return {el.get('id') for el in doc.findall(q('Style')) if el.get('id')}
 
 def key(pm):
-	desc = (pm.findtext(q('description')) or '').strip()
-	name = (pm.findtext(q('name')) or '').strip()
-	bssid = desc.split('|', 1)[0].strip()
-	if bssid:
-		return ('bssid', bssid)
-	coords = pm.findtext(f'.//{q("coordinates")}') or ''
-	return ('fallback', name, desc, coords.strip())
+    desc = (pm.findtext(q('description')) or '').strip()
+    name = (pm.findtext(q('name')) or '').strip()
+    bssid = desc.split('|', 1)[0].strip()
+    if bssid:
+        return ('bssid', bssid)
+    coords = pm.findtext(f'.//{q("coordinates")}') or ''
+    return ('fallback', name, desc, coords.strip())
 
 t1, r1, d1, p1, sig1 = parse(in1)
 t2, r2, d2, p2, sig2 = parse(in2)
 
 if sig1 != sig2:
-	raise SystemExit('Pliki mają inny format danych w Placemark')
+    fail('The files have different Placemark data formats')
 
 s1 = style_ids(d1)
 s2 = style_ids(d2)
 if s1 != s2:
-	raise SystemExit(f'Pliki mają inne Style: {sorted(s1)} != {sorted(s2)}')
+    fail(f'The files have different Style sets: {sorted(s1)} != {sorted(s2)}')
 
 seen = set()
 merged = []
 
 for pm in p1 + p2:
-	k = key(pm)
-	if k in seen:
-		continue
-	seen.add(k)
-	merged.append(pm)
+    k = key(pm)
+    if k in seen:
+        continue
+    seen.add(k)
+    merged.append(pm)
 
 for pm in list(d1.findall(q('Placemark'))):
-	d1.remove(pm)
+    d1.remove(pm)
 
 for pm in merged:
-	d1.append(pm)
+    d1.append(pm)
 
 if hasattr(ET, 'indent'):
-	ET.indent(r1, space='  ')
+    ET.indent(r1, space='  ')
 
 ET.ElementTree(r1).write(out, encoding='utf-8', xml_declaration=True)
-print(f'OK: {out} | placemarków: {len(merged)}')
+info(f'Output: {out} | placemarks: {len(merged)}')
 PY
+
+	info "Checking output file: $OUTPUT_MERGE"
+	VALID_FILE="$OUTPUT_MERGE"
+	valid || {
+		error "An error occurred while creating the KML file..."
+		exit 9
+	}
+	success "File generated: $OUTPUT_MERGE"
 }
 
 # Check
@@ -2191,7 +2244,7 @@ main() {
 	if $DO_SAVE; then do_save; exit 0; fi
 	if $CACHE_LIST; then list_cache; exit 0; fi
 	if $DO_VALID; then valid; exit 0; fi
-	if $DO_MERGE; then placeholder; exit 0; fi
+	if $DO_MERGE; then merge_kml; exit 0; fi
 	if $CHECK_UPDATE; then placeholder; exit 0; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
