@@ -33,7 +33,7 @@ SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="3.0-pre.2"
+SCRIPT_VERSION="3.0-pre.3"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
@@ -2246,7 +2246,6 @@ main() {
 	if $CACHE_LIST; then list_cache; exit 0; fi
 	if $DO_VALID; then valid; exit 0; fi
 	if $DO_MERGE; then merge_kml; exit 0; fi
-	if $CHECK_UPDATE; then placeholder; exit 0; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
 	if $CACHE_SEARCH; then search_cache; fi
