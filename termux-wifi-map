@@ -888,6 +888,7 @@ parse_args() {
 						fi
 						if [[ `dirname $0` != "$PREFIX/bin" ]]; then
 							error Command must be located in $PATH to create bin alias.
+							exit 5
 						fi
 						ln -s "$0" "$PREFIX/bin/$TARGET_BIN" &>/dev/null || {
 							error Cannot create symlink $TARGET_BIN.
