@@ -209,6 +209,7 @@ show_help() {
 
 banner() {
 	$SHOW_BANNER || return 0
+	echo Banner here
 }
 
 version_info() {
@@ -358,6 +359,7 @@ on_exit() {
 	code=$?
 	if $ALT_BUF; then
 		stty echo
+		stty susp ^Z
 		tput rmcup
 		info "Found: $AP_COUNT"
 	fi
@@ -2190,9 +2192,11 @@ main() {
 	if $ALT_BUF; then
 		tput smcup
 		stty -echo
+		stty susp undef
 		clear; banner; echo
 		info "Running in an alternate terminal."
 		info "The list will disappear once the scan/script is finished."
+		echo -e "\r\e[1;31m[WARN]\e[0m In this mode suspend [Ctrl+Z] is disabled!"
 		echo; info Starting...
 	fi
 	while :; do
