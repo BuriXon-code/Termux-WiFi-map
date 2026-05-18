@@ -42,6 +42,7 @@ SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/
 SCRIPT_DONATE="https://burixon.dev/donate/"
 SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
 SCRIPT_AV_VERSION="$(curl -s $SCRIPT_RAW_REPO | grep -oP '(?<=SCRIPT_VERSION=")[^"]+')"
+SCRIPT_AV_VERSION="$(curl -s "$SCRIPT_RAW_REPO" | grep -oP '^SCRIPT_VERSION="\K[^"]+')"
 SHOW_BANNER=true
 ASCI_RETURN="\e[0m"
 
@@ -214,15 +215,12 @@ version_info() {
 	banner
 	echo -e "${ASCI_RETURN}"
 	info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
-	if [ -t 1 ] \
-	   && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION" \
-	   && command -v curl &>/dev/null; then
-	
-	    if curl --max-time 3 -sSf "$SCRIPT_PAGE" >/dev/null 2>&1; then
-	        echo -e "
+
+	if [ -t 1 ] && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION"; then	
+		echo -e "
 \e[1;5;32m[UPDATE]\e[0m New version of the script available!
-Check the details: $SCRIPT_PAGE" >&2
-	    fi
+Check the details: $SCRIPT_PAGE
+                   https://github.com/BuriXon-code/$SCRIPT_NAME/" >&2
 	fi
 }
 about_info() {
@@ -284,7 +282,7 @@ if [ -t 1 ] \
    && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION" \
    && command -v curl &>/dev/null; then
 
-    if curl --max-time 5 -sSf "$SCRIPT_PAGE" >/dev/null 2>&1; then
+    if curl --max-time 3 -sSf "$SCRIPT_PAGE" >/dev/null 2>&1; then
         echo -e "
 \e[1;5;32m[UPDATE]\e[0m New version of the script available!
 Check the details: $SCRIPT_PAGE" >&2
