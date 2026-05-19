@@ -91,6 +91,9 @@ DO_MERGE=false
 MERGE_1=""
 MERGE_2=""
 OUTPUT_MERGE=""
+DO_CONVERT=false
+CONV_SOURCE=""
+CONV_OUTPUT=""
 
 #COLORS
 GREEN="\e[38;5;120m"
@@ -907,7 +910,7 @@ parse_args() {
 							shift 2
 							DO_MERGE=true
 							;;
-						-v|--check)
+						-v|--valid)
 							shift
 							if [ $# -gt 1 ]; then
 								error "Too many parameters."
@@ -921,6 +924,21 @@ parse_args() {
 							VALID_FILE="$1"
 							shift
 							DO_VALID=true
+							;;
+						-c|--convert)
+							shift
+							if [ $# -gt 1 ]; then
+								error "Too many parameters."
+								info "Try to use -h|--help for more info."
+								exit 1
+							elif [ $# -lt 1 ]; then
+								error "The required parameter is missing."
+								info "Try to use -h|--help for more info."
+								exit 1
+							fi
+							CONV_SOURCE="$1"
+							shift
+							DO_CONVERT=true
 							;;
 						-*|*)
 							error "Invalid parameter: $1"
@@ -2009,7 +2027,10 @@ valid() {
 		exit 0
 	fi
 }
-
+jsonl_to_kml() {
+	placeholder
+	exit 0
+}
 menu_select() {
 	local __out="$1"
 	shift
@@ -2316,6 +2337,7 @@ main() {
 	if $CACHE_LIST; then list_cache; fi
 	if $DO_VALID; then valid; fi
 	if $DO_MERGE; then merge_kml; fi
+	if $DO_CONVERT; then jsonl_to_kml; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
 	if $CACHE_SEARCH; then search_cache; fi
