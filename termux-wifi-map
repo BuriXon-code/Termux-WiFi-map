@@ -1,9 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068
+# shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068,2094,2153
 
-# + oui/vendor search
+# TODO
 # + OPTIONS:
-#	C cache - oui
+#	F file - -c --convert [source.jsonl]
 # new banner
 
 # Debugging
@@ -35,16 +35,14 @@ SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="3.0-pre.4"
+SCRIPT_VERSION="3.0-pre.5"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
 SCRIPT_DONATE="https://burixon.dev/donate/"
 SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
-SCRIPT_AV_VERSION="$(curl -s $SCRIPT_RAW_REPO | grep -oP '(?<=SCRIPT_VERSION=")[^"]+')"
 SCRIPT_AV_VERSION="$(curl -s "$SCRIPT_RAW_REPO" | grep -oP '^SCRIPT_VERSION="\K[^"]+')"
 SHOW_BANNER=true
-ASCI_RETURN="\e[0m"
 
 #CACHE
 CACHE_DIR="$HOME/.cache/BuriXon-code/Termux-WiFi-map"
@@ -66,6 +64,7 @@ H_ENGINE="TERMUX"
 H_ENGINE_SET=false
 FROM_ALIAS=false
 ALT_BUF=false
+RUN_FILE="/dev/null"
 
 #SAVE
 SAVE_OVERRIDE=false
@@ -98,6 +97,7 @@ GREEN="\e[38;5;120m"
 RED="\e[38;5;203m"
 YELLOW="\e[38;5;229m"
 RESET="\e[0m"
+ASCI_RETURN="\e[0m"
 
 # Messages
 error() {
@@ -122,7 +122,6 @@ version_lt() {
 }
 show_help() {
 	version_info
-	#TODO
 	echo -e "
 \e[1;36m[Usage]\e[0m $SCRIPT_COMMAND [D] [mode] [options]
 
@@ -146,9 +145,10 @@ show_help() {
   -c|--countinuous		Set working mode to continuous (default: false)
   -q|--quiet			Disable vibration/outputs during scanning (default: false)
   -v|--haptic-engine [option]	Set up the haptic engine [bell|termux] (default: termux-vibrate)
-  -l|--last-location		Use last known location in case of Termux:API error.
+  -l|--last-location		Use last known location in case of Termux:API error (default: false)
   -t|--timeout [value]	Set the timeout for location retrieval [1-3600] (default: 10)
   -a|--alt-buffer		Enables an alternate terminal buffer for scanning (default: false)
+  -o|--output [file]		Append output to another file (along cache file) (in JSONL format) (default: /dev/null)
   -e|--exit-on-fail		Exit on Termux:API error (default: false)\n
   \e[36m[SAVE]\e[0m
   -n|--name [filename]		Declare filename to save
@@ -159,7 +159,8 @@ show_help() {
   -l|--list			List all known APs (pretty but slow)
   -j|--json			List all known APs as JSON (fast)
   -c|--count			Display the number of all known APs
-  -s|--search [pattern]		Search the given (comma-separated) phrases in the AP data
+  -s|--search [pattern]		Search the given (comma-separated) phrases in the AP database (case sensitive)
+  -v|--vendor [name]		Search the given vendor manufacturer in the AP database (case insensitive)
   -p|--purge			Clear the list of all known APs\n
   \e[36m[ALIAS]\e[0m
   -a|--add [name] [options]	Add a new command alias/shortcut by specifying the name and target parameters
@@ -178,6 +179,8 @@ show_help() {
   $SCRIPT_COMMAND -R\n
   Continous scanning with 5s delay:
   $SCRIPT_COMMAND --run -d 5 -c\n
+  Continous scanning with append to the file \"temp.jsonl\":
+  $SCRIPT_COMMAND R -c -o test.jsonl
   Save DB to file.kml file:
   $SCRIPT_COMMAND -S -n file -f kml\n
   Override existing file.json file:
@@ -186,6 +189,9 @@ show_help() {
   $SCRIPT_COMMAND -C -l\n
   Search for phrases 'WiFi' and 'AP':
   $SCRIPT_COMMAND -C -s \"WiFi,AP\"\n
+  Search for Xiaomi BSSIDs:
+  $SCRIPT_COMMAND C -v xiaomi
+  $SCRIPT_COMMAND C -v XIAOMI
   Check file.json integrity:
   $SCRIPT_COMMAND F -v file.json\n
   Merge 'map1.kml' with 'map2.kml':
@@ -203,37 +209,45 @@ show_help() {
   JSONL		Newline-delimited JSON
   CSV		Comma-separated values
   KML		Format for representing points on maps\n
-"
+\e[1;36m[KML icons]\e[0m
+  \e[1;32m████\e[0m		Open WiFi network
+  \e[1;33m████\e[0m		Secured WiFi network
+  \e[1;31m████\e[0m		Scan using previous location"
 	exit 0
 }
-
 banner() {
 	$SHOW_BANNER || return 0
-	echo Banner here
+	echo -e "$SCRIPT_NAME by $SCRIPT_AUTHOR" >&2
 }
-
-version_info() {
-	banner
-	echo -e "${ASCI_RETURN}"
-	info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
-
+check_update() {
 	if [ -t 1 ] && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION"; then	
 		echo -e "
 \e[1;5;32m[UPDATE]\e[0m New version of the script available!
-Check the details: $SCRIPT_PAGE
-                   https://github.com/BuriXon-code/$SCRIPT_NAME/" >&2
+Check the details: \e[1;36m$SCRIPT_PAGE\e[0m\e[K
+                   \e[1;36mhttps://github.com/BuriXon-code/$SCRIPT_NAME/\e[0m\e[K" >&2
+	fi
+}
+version_info() {
+	if [ -p /proc/$$/fd/1 ]; then
+		echo -e "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
+	else
+		banner
+		echo -e "${ASCI_RETURN}"
+		info "$SCRIPT_NAME v$SCRIPT_VERSION (c) $SCRIPT_V_R_DATE $SCRIPT_AUTHOR"
+		check_update
 	fi
 }
 about_info() {
-	#TODO
 	version_info
 	echo -e "
 \e[1;36m[About]\e[0m The script \e[1m$SCRIPT_COMMAND_O\e[0m, which is the main executable component of the Termux-WiFi-map project, is a tool that allows you to build a database of WiFi networks in your surroundings directly in Termux.\n
 \e[1;36m[Options]\e[0m Among the available options, you can find:
 	+ scanning with various options
 	+ saving collected data to JSON, CSV, KML files
+	+ searching for specific patterns
 	+ combining multiple KML files into one
 	+ validating files created by the script
+	+ creating your own shortcuts for easier use
 
 \e[1;36m[Changelog]\e[0m:
 [1.0] - Initial Release
@@ -260,7 +274,7 @@ about_info() {
 [2.3] - Fixed one minor bug:
 	+ Slight line shifting during interactive export to KML.
 [2.4] - Fixed two reported bugs:
-	+ Problem parsing args $(basename $0) -A <aliasname> for non-existent aliasname.
+	+ Problem parsing args $SCRIPT_COMMAND -A <aliasname> for non-existent aliasname.
 	+ -v --version  option started an infinite loop.
 	+ Additionally: Checking if the alias aliasname is readable.
 [2.5] - Added \'nobanner\' option:
@@ -271,27 +285,21 @@ about_info() {
 	+ Minor change for opening project page.
 [2.7] - Fix KML exporting:
 	+ Fixed a user-noted bug where ANSI cleanup sequences were being written to the file during resize during export. A file descriptor change was necessary.
+[$SCRIPT_VERSION] - In progress...
 [3.0] - A huge dose of improvements [not released yet]:
-	+ New option to merge KML files;
-	+ New option to search AP by vendor name"
-echo -e "
+	+ New option to merge KML files.
+	+ New option to search AP by vendor name.
+	+ Option to list scans on an alternative terminal.
+	+ Option to append currently collected data to the file (along cache file).
+	- Minimized the returned exit code (0 or 1)."
+	echo -e "
 \e[1;36m[Version]\e[0m
 Current version: $SCRIPT_VERSION
 Available version: $SCRIPT_AV_VERSION"
 
-if [ -t 1 ] \
-   && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION" \
-   && command -v curl &>/dev/null; then
+	check_update
 
-    if curl --max-time 3 -sSf "$SCRIPT_PAGE" >/dev/null 2>&1; then
-        echo -e "
-\e[1;5;32m[UPDATE]\e[0m New version of the script available!
-Check the details: $SCRIPT_PAGE" >&2
-        sleep 0.5
-    fi
-fi
-
-echo -e "
+	echo -e "
 \e[1;36m[License]\e[0m The script is released under the GPLv3 license.\n
 This license allows you to freely use, modify, and distribute the script, even for commercial purposes, as long as any distributed versions also remain under GPLv3. \n
 It does not allow you to take the script and release it under a different proprietary license, nor does it remove the requirement to share the source code of any modified versions.\n
@@ -531,15 +539,14 @@ parse_args() {
 					success Writing new data to file.; SAVE_OVERRIDE=true
 				fi
 				do_save
-				exit 0
 			;;
 			CACHE*)
 				JSON_LIST=false
 				info "Select operation:"
 				menu_select CACHE_OP "List in pretty format [slow]" "List in JSON [fast]" "Count data records" "Search for patterns" "Purge all database contents" ABORT
 				case "$CACHE_OP" in
-					List\ in\ pretty*) success "Listing..."; list_cache; exit 0 ;;
-					List\ in\ JSON*) success "Listing..."; JSON_LIST=true; list_cache; exit 0 ;;
+					List\ in\ pretty*) success "Listing..."; list_cache ;;
+					List\ in\ JSON*) success "Listing..."; JSON_LIST=true; list_cache ;;
 					Count*) success "Counting..."; count_cache; exit 0 ;;
 					Search*)
 						info "Enter search patterns one-by-one bellow."
@@ -590,7 +597,7 @@ parse_args() {
 			N|-N|--nobanner) SHOW_BANNER=false; shift ;;
 			R|-R|--run)
 				shift
-				if [ $# -gt 11 ]; then
+				if [ $# -gt 13 ]; then
 					error "Too many parameters."
 					info "Try to use -h|--help for more info."
 					exit 1
@@ -671,6 +678,10 @@ parse_args() {
 							if ! $DO_VIBRATE; then error "Cannot set alternative teminal if running quiet run."; exit 1; fi
 							ALT_BUF=true
 							shift
+							;;
+						-o|--output) 
+							RUN_FILE="$2"
+							shift 2
 							;;
 						*)
 							error "Invalid parameter: $1"
@@ -775,6 +786,7 @@ parse_args() {
 				;;
 			A|-A|--alias)
 				shift
+				echo
 				if [ $# -lt 1 ]; then error Must specify alias-mode; exit 1; fi
 				case $1 in
 					-a|--add) shift; alias_mod add $* ;; 
@@ -955,14 +967,13 @@ parse_args() {
 		esac
 	done
 }
-
 # Catch stdout pipe'ing
+echo
 if [ -p /proc/$$/fd/1 ]; then
-	echo -e "\n${RED}[WARN]${RESET} $SCRIPT_COMMAND does not have a stable CLI interface. Use with caution in scripts.\n" >&2
+	echo -e "\n${RED}[WARN]${RESET} $SCRIPT_COMMAND does not have a stable CLI interface. Use with caution in scripts." >&2
 else
 	echo -en "\e[?25l"
 fi
-
 # Init
 req() {
 	MISSING=false
@@ -1118,6 +1129,8 @@ scan_once() {
 	echo FALSE/ERROR below means everything allright. &>/dev/null
 	[ -z "$raw" ] && return 1
 
+	: >> "$RUN_FILE"
+
 	while IFS= read -r -u 3 line; do
 		local ssid bssid rssi freq caps
 		ssid=$(printf "%s" "$line" | jq -r '.ssid')
@@ -1140,7 +1153,7 @@ scan_once() {
 				echo -en "\e[1A"; info "Found $AP_COUNT..."
 			fi
 			printf "%s\n" "$line" | jq -c --arg t "$(now_utc)" --arg p "$PROVIDER" --argjson la "$lat" --argjson lo "$lon" --argjson al "${alt:-0}" --argjson ap "$api" \
-				'. + {time:$t,provider:$p,latitude:$la,longitude:$lo,altitude:$al,api:$ap}' >> "$CACHE_FILE"
+				'. + {time:$t,provider:$p,latitude:$la,longitude:$lo,altitude:$al,api:$ap}' | tee -a "$CACHE_FILE" >> "$RUN_FILE"
 		fi
 	done 3< <(printf "%s" "$raw" | jq -c '.[] | {ssid:.ssid,bssid:.bssid,rssi:.rssi,frequency_mhz:.frequency_mhz,capabilities:.capabilities}')
 }
@@ -1155,7 +1168,7 @@ list_cache() {
 	echo
 
 	if $JSON_LIST; then
-		cat "$CACHE_FILE" | jq
+		cat "$CACHE_FILE" | jq -M
 	else
 		while IFS= read -r entry; do
 			SSID=$(jq -r 'if .ssid == null or .ssid == "" then "hidden" else .ssid end' <<<"$entry")
@@ -1174,6 +1187,7 @@ list_cache() {
 	fi
 
 	success "Done - $TOTAL"
+	exit 0
 }
 
 # Count
@@ -1265,7 +1279,7 @@ search_cache() {
 	done
 	echo; info "Search patterns: $pattern_line"
 	info "Matching: $MATCHING_COUNT"
-	info "Export founded data? [y/N] "
+	info "Export found data? [y/N] "
 	read -rn1 do_export
 	case "$do_export" in
 		y)
@@ -1438,7 +1452,13 @@ do_save() {
 	if [ $# -eq 2 ]; then
 		CACHE_FILE="$1"
 		SAVE_FMT="$2"
-		SAVE_FILE="$SEARCH_PATTERN"
+		if [ -n "$SEARCH_PATTERN" ]; then
+			SAVE_FILE="$SEARCH_PATTERN"
+		elif [ -n "$SEARCH_VENDOR" ]; then
+			SAVE_FILE="$SEARCH_VENDOR"
+		else
+			SAVE_FILE="output"
+		fi
 		SAVE_OVERRIDE=true
 	fi
 	[ -s "$CACHE_FILE" ] || { error "Cache empty: try to scan first."; exit 1; }
@@ -1473,11 +1493,10 @@ do_save() {
 			exit 1
 			;;
 	esac
+	exit 0
 }
-
-# Vendor download TODO
 ensure_oui_list() {
-	if [ -f "OUI_FILE" ] && [ -s "$OUI_FILE" ]; then
+	if [ -f "$OUI_FILE" ] && [ -s "$OUI_FILE" ]; then
 		return 0
 	fi
 	info "OUI list not found. Downloading..."
@@ -1491,19 +1510,123 @@ ensure_oui_list() {
 			exit 1
 		fi
 	done
-	if [ -f "OUI_FILE".tmp ] && [ -s "$OUI_FILE".tmp ]; then
-		mv "$OUI_FILE".tmp "$OUI_FILE"
-		return 0
-	fi
+	success "Downloaded!"
+	mv "$OUI_FILE".tmp "$OUI_FILE" || {
+		error "Something went wrong..."
+		exit 1
+	}
+	success "OUI (vendor) list ready!\n"
+	return 0
 }
-
-# Vendor search TODO
 search_vendor() {
-	placeholder
+	ensure_oui_list &&
+
+	local -a prefixes=()
+	local -A vendor_by_prefix=()
+	local regex filtered_cache line json bssid prefix vendor do_export FILTERED_FMT
+	MATCHING_COUNT=0
+
+	if [ ! -f "$CACHE_FILE" ]; then
+		error "Cache file not found. Try to scan first."
+		exit 1
+	fi
+
+	if [ ! -f "$OUI_FILE" ]; then
+		error "OUI file not found."
+		exit 1
+	fi
+
+	if [ -z "$SEARCH_VENDOR" ] || ! [[ "$SEARCH_VENDOR" =~ [^[:space:]] ]]; then
+		error "Search vendor is empty."
+		exit 1
+	fi
+
+	while IFS=$'\t' read -r prefix vendor; do
+		[ -n "$prefix" ] || continue
+		[ -n "$vendor" ] || continue
+		if [ -z "${vendor_by_prefix[$prefix]+x}" ]; then
+			vendor_by_prefix["$prefix"]="$vendor"
+			prefixes+=("$prefix")
+		fi
+	done < <(
+		awk -F',' -v needle="$SEARCH_VENDOR" '
+			function trim(s) {
+				gsub(/^[ \t]+|[ \t]+$/, "", s)
+				return s
+			}
+			{
+				p = trim($1)
+				v = substr($0, index($0, ",") + 1)
+				v = trim(v)
+				if (index(tolower(v), tolower(needle)) > 0) {
+					printf "%s\t%s\n", toupper(p), v
+				}
+			}
+		' "$OUI_FILE"
+	)
+
+	if [ "${#prefixes[@]}" -eq 0 ]; then
+		error "No vendors found."
+		exit 1
+	fi
+
+	regex=$(printf "%s|" "${prefixes[@]}")
+	regex=${regex%|}
+
+	info "Search vendor: $(printf '\033[38;5;14m\033[1m%s\033[0m' "$SEARCH_VENDOR")"
+
+	filtered_cache=$(mktemp) || {
+		error "Failed to create temp file."
+		exit 1
+	}
+
+	if ! grep -Ei "\"bssid\":\"(${regex})" "$CACHE_FILE" > "$filtered_cache"; then
+		rm -f "$filtered_cache"
+		error "No matches found."
+		exit 1
+	fi
+
+	while IFS= read -r line; do
+		echo
+		info "Found:"
+		if ! json=$(printf "%s" "$line" | jq . 2>/dev/null); then
+			rm -f "$filtered_cache"
+			error "Failed to parse JSON."
+			exit 1
+		fi
+
+		bssid=$(printf "%s" "$json" | jq -r '.bssid // empty')
+		prefix=${bssid^^}
+		prefix=${prefix:0:8}
+		vendor=${vendor_by_prefix[$prefix]}
+
+		info "$(printf 'Vendor: \033[38;5;14m%s\033[0m' "$vendor")"
+		printf "%s\n" "$json"
+		MATCHING_COUNT=$((MATCHING_COUNT+1))
+	done < "$filtered_cache"
+
+	echo
+	info "Search vendor: $(printf '\033[38;5;14m\033[1m%s\033[0m' "$SEARCH_VENDOR")"
+	info "Matching: $MATCHING_COUNT"
+	info "Export found data? [y/N] "
+	read -rn1 do_export
+	case "$do_export" in
+		y)
+			echo -en "\e[?25h`info "Select output format (json|jsonl|pjson|csv|kml): "`"
+			read -r FILTERED_FMT
+			echo -en "\e[?25l"
+			do_save "$filtered_cache" "$FILTERED_FMT"
+			;;
+		*)
+			info "Selected: $do_export"
+			info "Aborting."
+			;;
+	esac
+
+	rm -f "$filtered_cache"
+	success "Done."
 	exit 0
 }
-
-# Merge KMLs TODO
 merge_kml() {
 	if ! $DO_MERGE; then
 		error "Something went wrong..."
@@ -1520,13 +1643,17 @@ merge_kml() {
 		exit 1
 	fi
 	if [ ! -x `which python3` ]; then
-		error "`basename $0`: Permission denied: `which python3`"
+		error "$SCRIPT_COMMAND: Permission denied: `which python3`"
 		exit 1
 	fi
 	
 	for f in "$MERGE_1" "$MERGE_2"; do
+		[ -f "$f" ] || {
+			error "File $f does not exist."
+			exit 1
+		}
 		[ -r "$f" ] || {
-			error "`basename $0`: Permission denied: $f"
+			error "$SCRIPT_COMMAND: Permission denied: $f"
 			exit 1
 		}
 	done
@@ -1534,7 +1661,7 @@ merge_kml() {
 	for f in "$MERGE_1" "$MERGE_2"; do
 		info "Checking file: $f"
 		VALID_FILE="$f"
-		valid >/dev/null || {
+		valid noex >/dev/null || {
 			error "File $f is invalid..."
 			exit 1
 		}
@@ -1649,11 +1776,13 @@ PY
 
 	info "Checking output file: $OUTPUT_MERGE"
 	VALID_FILE="$OUTPUT_MERGE"
-	valid || {
+	valid noex || {
 		error "An error occurred while creating the KML file..."
 		exit 1
+	} && {
+		success "File generated: $OUTPUT_MERGE"
+		exit 0
 	}
-	success "File generated: $OUTPUT_MERGE"
 }
 
 # Check
@@ -1661,7 +1790,7 @@ valid() {
 	local FILE SSID MIME TYPE LINES
 	FILE="$VALID_FILE"
 	[ ! -f "$FILE" ] && error "No file: $FILE" && exit 1
-	
+
 	info "Checking: $FILE"
 	
 	MIME=$(file --mime-type -b "$FILE")
@@ -1816,7 +1945,7 @@ valid() {
 	        done < "$FILE"
 	        if [ -n "$BAD_LINES" ]; then
 	            echo -en "\e[1A\e[K"
-	            error "Invalid JSON on lines:$BAD_LINES"
+	            error "Invalid JSON on lines: $BAD_LINES"
 	        else
 	            echo -en "\e[1A\e[K"
 	            success "Valid JSONL file."
@@ -1872,9 +2001,13 @@ valid() {
 	            info "Might be: $MIGHT_TYPE"
 	        else
 	            error "Unable to determine file type."
+	            exit 1
 	        fi
 	        ;;
 	esac
+	if [ -z "$1" ] || [[ "$1" != "noex" ]]; then
+		exit 0
+	fi
 }
 
 menu_select() {
@@ -1975,7 +2108,7 @@ alias_mod() {
 			info "Cretaing new alias:\n"
 			info "  Name: $ALIASNAME"
 			info "  Params: $*"
-			info "  Command: `basename $0` $*\n"
+			info "  Command: $SCRIPT_COMMAND $*\n"
 			info "Use -d|--delete or -e|--edit to remove/edit alias.\n"
 			USER_EDITOR=`readlink -f $PREFIX/bin/editor`
 			USER_EDITOR=`basename $USER_EDITOR`
@@ -2000,7 +2133,7 @@ $*
 #-------------------------------------------
 # To finish, save the file ( \`:wq\` for vim,
 # \`Ctrl+S Ctrl+X\` for nano etc.)." > "$ALIASFILE" && {
-				success "Alias created. Use `basename $0` -A $ALIASNAME to run."
+				success "Alias created. Use $SCRIPT_COMMAND -A $ALIASNAME to run."
 				exit 0
 			} || {
 				error "Something went wrong. Make sure alias $ALIASNAME does not exit, and try again."
@@ -2030,7 +2163,7 @@ $*
 					info "  Name: $ALIASNAME:"
 					info "  Mode: $MODE"
 					info "  Params: $params"
-					info "  Command: `basename $0` $ALIASCONTENT"
+					info "  Command: $SCRIPT_COMMAND $ALIASCONTENT"
 				else
 					FOUND_ALIAS=false
 					for PATTERN in "$@"; do
@@ -2041,7 +2174,7 @@ $*
 							info "  Name: $ALIASNAME:"
 							info "  Mode: $MODE"
 							info "  Params: $params"
-							info "  Command: `basename $0` $ALIASCONTENT"
+							info "  Command: $SCRIPT_COMMAND $ALIASCONTENT"
 							break
 						fi
 					done
@@ -2174,20 +2307,19 @@ alias_run() {
 
 # RUN
 main() {
-	echo
 	req
 	ensure_cache
 	parse_args "$@"
 	banner
 	echo -e "${ASCI_RETURN}"
-	if $DO_SAVE; then do_save; exit 0; fi
-	if $CACHE_LIST; then list_cache; exit 0; fi
-	if $DO_VALID; then valid; exit 0; fi
-	if $DO_MERGE; then merge_kml; exit 0; fi
+	if $DO_SAVE; then do_save; fi
+	if $CACHE_LIST; then list_cache; fi
+	if $DO_VALID; then valid; fi
+	if $DO_MERGE; then merge_kml; fi
 	if $CACHE_COUNT; then count_cache; exit 0; fi
 	if $CACHE_PURGE; then purge_cache; fi
 	if $CACHE_SEARCH; then search_cache; fi
-	if $OUI_SEARCH; then placeholder; exit 0; fi
+	if $OUI_SEARCH; then search_vendor; fi
 	info Starting...
 	if $ALT_BUF; then
 		tput smcup
