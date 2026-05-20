@@ -1,5 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# shellcheck disable=1090,2015,2001,2009,2034,2006,2048,2086,2046,2269,1010,2068,2094,2153
+# shellcheck disable=1010,1090,2001,2006,2009
+# shellcheck disable=2015,2034,2046,2048,2068
+# shellcheck disable=2086,2094,2153,2269
 
 # TODO
 # + OPTIONS:
@@ -41,7 +43,7 @@ SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
 SCRIPT_DONATE="https://burixon.dev/donate/"
 SCRIPT_REPORT="https://burixon.dev/bugreport/#$SCRIPT_NAME"
-SCRIPT_AV_VERSION="$(curl -s "$SCRIPT_RAW_REPO" | grep -oP '^SCRIPT_VERSION="\K[^"]+')"
+SCRIPT_AV_VERSION="$(timeout 3 curl -s "$SCRIPT_RAW_REPO" | grep -oP '^SCRIPT_VERSION="\K[^"]+')"
 SHOW_BANNER=true
 
 #CACHE
@@ -1495,8 +1497,11 @@ do_save() {
 		SAVE_FMT="$2"
 		if [ -n "$SEARCH_PATTERN" ]; then
 			SAVE_FILE="$SEARCH_PATTERN"
+			SAFE_SEARCH="${SEARCH_PATTERN//[^a-zA-Z0-9._-]/_}"
+			SAVE_FILE="$SAFE_SEARCH"
 		elif [ -n "$SEARCH_VENDOR" ]; then
-			SAVE_FILE="$SEARCH_VENDOR"
+			SAFE_VENDOR="${SEARCH_VENDOR//[^a-zA-Z0-9._-]/_}"
+			SAVE_FILE="$SAFE_VENDOR"
 		else
 			SAVE_FILE="output"
 		fi
