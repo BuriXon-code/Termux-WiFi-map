@@ -23,8 +23,8 @@ This README documents how to install, run and configure the tool, explains modes
 - **Runner** (`--run`): triggers Wi-Fi scan(s), appends results to the internal cache (JSONL). Can run once or in continuous loop.
 - **Saver** (`--save`): reads the cache and writes it to a chosen export format/file.
 - **Cache manager** (`--cache`): view, count or purge the internal cache.
-- **Validator** (`--check`): checks a provided file for structure/format errors.
-- **Aliases** (`--check`): manage dynamic aliases/shortcuts.
+- **Validator** (`--file --check`): checks a provided file for structure/format errors.
+- **Aliases** (`--alias`): manage dynamic aliases/shortcuts.
 - **Helpers**: version info, about, and help output.
 
 ## Output formats
@@ -51,9 +51,8 @@ Modes control the main action (scan/save/cache/validate), options tune behaviour
 | Run  | `R` `-R` `--run` | Perform Wi-Fi scan(s) and append results to cache. Can be single-shot or continuous. |
 | Save | `S` `-S` `--save` | Export cached data to a file in chosen format (json/pjson/jsonl/csv/kml). Requires `--name` and `--format`. |
 | Cache | `C` `-C` `--cache` | Cache management: list (`--list`), count (`--count`), purge (`--purge`). |
-| Check/Verify | `V` `-V` `--check` | Validate structure of a provided file (pass path as parameter). |
+| Check/Verify | `F` `-F` `--file` | File structure checking, merging, file conversion. |
 | Alias | `A` `-A` `--alias` | Create/manage/run dynamic script/option aliases |
-| Help/Info | `-h` `--help` `-v` `--version` `-i` `--version-info` | Show help, version or extended about info. |
 
 #### Typical workflows
 - Quick scan & inspect: run a single scan (`--run`) and then `--cache --list` to see what was captured.
