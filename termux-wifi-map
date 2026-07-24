@@ -38,7 +38,7 @@ SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="3.0.1"
+SCRIPT_VERSION="3.0.2"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
@@ -213,8 +213,8 @@ show_help() {
   KML		Format for representing points on maps\n
 \e[1;36m[KML icons]\e[0m
   \e[1;32m████\e[0m	Open WiFi network
-  \e[1;33m████\e[0m	Secured WiFi network
-  \e[1;31m████\e[0m	Scan using previous location"
+  \e[1;31m████\e[0m	Secured WiFi network
+  \e[1;33m████\e[0m	Scan using previous location"
 	exit 0
 }
 banner() {
