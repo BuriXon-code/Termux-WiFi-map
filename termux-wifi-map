@@ -38,7 +38,7 @@ SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="3.0.2"
+SCRIPT_VERSION="3.1.0"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
@@ -1639,16 +1639,41 @@ do_save() {
 }
 ensure_oui_list() {
 	if [ -f "$OUI_FILE" ] && [ -s "$OUI_FILE" ]; then
+		if [ "$(stat -c %Y "$OUI_FILE")" -lt "$(( $(date +%s) - 14 * 86400 ))" ]; then
+			update_oui
+		fi
 		return 0
 	fi
 	info "OUI list not found. Downloading..."
+	download_oui_list
+	return 0
+}
+update_oui() {
+	info "The OUI file appears to be outdated."
+	stty echo
+	info "Update it now? [y/N] "
+	read -rn1 do_oui_update
+	stty -echo
+	case "$do_oui_update" in
+		y)
+			info "Selected: $do_oui_update"
+			info "Downloading..."
+			download_oui_list
+			;;
+		*)
+			info "Selected: $do_oui_update"
+			info "Aborting."; echo; return 0
+			;;
+	esac
+}
+download_oui_list() {
 	curl -s https://standards-oui.ieee.org/oui/oui.txt \
 	| grep '(hex)' \
 	| sed -E 's/^([0-9A-Fa-f-]+)[[:space:]]+\(hex\)[[:space:]]+/\1|/; s/-/:/g; s/,//g; s/\b(Co|Ltd|Inc|Corporation|Corp|SAS|GmbH|LLC|Ltd\.|Inc\.)\b//gi; s/\.{1,2}//g; s/[[:space:]]+/ /g; s/[[:space:]]+$//; s/\|/,/' > "$OUI_FILE".tmp
 	
 	for code in "${PIPESTATUS[@]}"; do
 		if [ "$code" -ne 0 ]; then
-			error "Somwthing went wrong..."
+			error "Something went wrong..."
 			exit 1
 		fi
 	done
