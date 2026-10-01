@@ -38,7 +38,7 @@ SCRIPT_COMMAND_O="termux-wifi-map"
 SCRIPT_COMMAND="$(basename "$0")"
 SCRIPT_AUTHOR="Kamil BuriXon Burek"
 SCRIPT_AUTHOR_ALIAS="BuriXon-code"
-SCRIPT_VERSION="3.1.0"
+SCRIPT_VERSION="3.1.1"
 SCRIPT_V_R_DATE="2026"
 SCRIPT_PAGE="https://burixon.dev/projects/$SCRIPT_NAME/"
 SCRIPT_RAW_REPO="https://raw.githubusercontent.com/BuriXon-code/Termux-WiFi-map/master/termux-wifi-map"
@@ -261,7 +261,13 @@ check_update() {
 			return 0
 		fi
 	}
-	SCRIPT_AV_VERSION="$(timeout 3 curl -s "$SCRIPT_RAW_REPO" || true | grep -oP '^SCRIPT_VERSION="\K[^"]+' || true)"
+
+	SCRIPT_AV_VERSION="$(
+		{
+			timeout 3 curl -s "$SCRIPT_RAW_REPO" || true
+		} | grep -oP '^SCRIPT_VERSION="\K[^"]+' || true
+	)"
+
 	if [ -t 1 ] && version_lt "$SCRIPT_VERSION" "$SCRIPT_AV_VERSION"; then	
 		echo -e "\e[1;5;32m[UPDATE]\e[0m New version of the script available: $SCRIPT_AV_VERSION
 Check the details: \e[1;36m$SCRIPT_PAGE\e[0m\e[K
