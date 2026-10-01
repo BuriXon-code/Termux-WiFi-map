@@ -1,5 +1,7 @@
 # Termux-WiFi-map
 
+![Banner](/banner.gif)
+
 ## About
 Termux-WiFi-map is a comprehensive Bash utility for Termux on Android that scans nearby Wi-Fi access points (APs), records their metadata and optionally geolocates them using Termux location providers. It is intended for network hobbyists, security researchers, and anyone who needs a lightweight, non-root Wi-Fi mapping tool on mobile devices.
 
